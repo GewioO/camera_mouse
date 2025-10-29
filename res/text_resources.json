@@ -1,0 +1,6 @@
+{
+    "help": {
+        "uk": "Режими запуску:\n  default: рух миші, скролл вниз, скролл вверх\n  touch: рух миші, клік (великий+вказівний), подвійний клік (великий+середній), drag-n-drop (великий+безіменний)\n  scroll: скролл вниз, скролл вверх\n  help: вивід цього опису\n  configuration: (тимчасово) не реалізовано",
+        "en": "Modes:\n  default: mouse move, scroll down, scroll up\n  touch: mouse move, click (thumb+index), double click (thumb+middle), drag-n-drop (thumb+ring)\n  scroll: scroll down, scroll up\n  help: show this help\n  configuration: (temporarily) not implemented"
+    }
+}
