@@ -23,8 +23,6 @@ class JsonManager:
         with open(path, "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=4)
 
-    # Specific methods:
-
     def load_profiles(self) -> Dict[str, Dict[str, str]]:
         return self.load_json("profile_config.json", default={})
 
