@@ -1,0 +1,118 @@
+[
+    {
+        "name": "thumb_index",
+        "description_uk": "Великий + вказівний",
+        "description_en": "Thumb + Index",
+        "fingers": ["thumb", "index"],
+        "check": "touch", 
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_middle",
+        "description_uk": "Великий + середній",
+        "description_en": "Thumb + Middle",
+        "fingers": ["thumb", "middle"],
+        "check": "touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_ring",
+        "description_uk": "Великий + безіменний",
+        "description_en": "Thumb + Ring",
+        "fingers": ["thumb", "ring"],
+        "check": "touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_pinky",
+        "description_uk": "Великий + мізинець",
+        "description_en": "Thumb + Pinky",
+        "fingers": ["thumb", "pinky"],
+        "check": "touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_index_middle",
+        "description_uk": "Великий + вказівний + середній",
+        "description_en": "Thumb + Index + Middle",
+        "fingers": ["thumb", "index", "middle"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_middle_ring",
+        "description_uk": "Великий + середній + безіменний",
+        "description_en": "Thumb + Middle + Ring",
+        "fingers": ["thumb", "middle", "ring"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_ring_pinky",
+        "description_uk": "Великий + безіменний + мізинець",
+        "description_en": "Thumb + Ring + Pinky",
+        "fingers": ["thumb", "ring", "pinky"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_index_ring",
+        "description_uk": "Великий + вказівний + безіменний",
+        "description_en": "Thumb + Index + Ring",
+        "fingers": ["thumb", "index", "ring"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_index_middle_ring",
+        "description_uk": "Великий + вказівний + середній + безіменний",
+        "description_en": "Thumb + Index + Middle + Ring",
+        "fingers": ["thumb", "index", "middle", "ring"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+        "name": "thumb_index_middle_ring_pinky",
+        "description_uk": "Великий + вказівний + середній + безіменний + мізинець",
+        "description_en": "Thumb + Index + Middle + Ring + Pinky",
+        "fingers": ["thumb", "index", "middle", "ring", "pinky"],
+        "check": "group_touch",
+        "args": {
+            "distance_threshold": 40
+        }
+    },
+    {
+    "name": "fist_index_up",
+    "description_uk": "Кулак, а вказівний палець вверх",
+    "description_en": "Fist with Index Up",
+    "special": true,
+    "fingers": ["index", "middle", "ring", "pinky", "thumb"],
+    "check": "fist_index_up",
+    "args": {
+            "index_tip_to_pip_offset": 0.03,
+            "others_folded_offset": 0.015,
+            "tip_ids": [8, 12, 16, 20],       
+            "pip_ids": [6, 10, 14, 18],       
+            "fold_ids": [12, 16, 20]          
+        }
+    }
+
+]

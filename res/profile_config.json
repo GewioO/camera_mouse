@@ -1,0 +1,16 @@
+{
+    "default": {
+        "mouse_move": "center_move",
+        "scroll_up": "is_fist_and_index_up",
+        "scroll_down": "is_thumb_middle_ring"
+    },
+    "touch": {
+        "click": "is_thumb_and_index",
+        "double_click": "is_thumb_and_middle",
+        "drag": "is_thumb_and_ring"
+    },
+    "scroll": {
+        "scroll_up": "is_fist_and_index_up",
+        "scroll_down": "is_thumb_middle_ring"
+    }
+}

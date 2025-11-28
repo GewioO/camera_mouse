@@ -78,7 +78,7 @@ class MouseController:
             elif direction == 'down':
                 self.pynput_mouse.scroll(0, -amount)
         except Exception as e:
-            print(f"ПScroll error: {e}")
+            print(f"Scroll error: {e}")
     
     def get_distance(self, point1, point2):
         x1, y1 = point1

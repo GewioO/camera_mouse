@@ -1,72 +1,73 @@
 import numpy as np
+from json_manager import JsonManager
+
 
 class PresetGestures:
-    def __init__(self, landmarks, frame_width, frame_height, threshold=40):
-        """
-        landmarks - list cntain 21 cortage (id, x, y, z), mediapipe like
-        frame_width, frame_height - for coords to pixels
-        threshold - distance between fingers
-        """
-        self.lm = landmarks
-        self.w = frame_width
-        self.h = frame_height
-        self.th = threshold
-        
-        self.tips = {
+    def __init__(
+        self,
+        landmarks,
+        frame_width: int,
+        frame_height: int,
+        json_manager: JsonManager | None = None
+    ):
+        self.landmarks = landmarks
+        self.frame_width = frame_width
+        self.frame_height = frame_height
+        self.finger_tips = {
             'thumb': 4,
             'index': 8,
             'middle': 12,
             'ring': 16,
             'pinky': 20
         }
-    
-    def _distance(self, p1, p2):
-        x1 = int(self.lm[p1][1] * self.w)
-        y1 = int(self.lm[p1][2] * self.h)
-        x2 = int(self.lm[p2][1] * self.w)
-        y2 = int(self.lm[p2][2] * self.h)
-        return np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
-    
-    def _group_touch(self, group):
-        # group = ['thumb', 'index', ...]
-        return all(self._distance(self.tips[f], self.tips['thumb']) < self.th for f in group if f != "thumb")
+        self.json_manager = json_manager or JsonManager()
+        gesture_definitions = self.json_manager.load_gestures()
+        self.gesture_definitions = {gesture['name']: gesture for gesture in gesture_definitions}
 
-    # 1. Fist, but index up
-    def is_fist_and_index_up(self):
-        if not self.lm or len(self.lm) < 21:
+    def detect(self, gesture_name: str) -> bool:
+        gesture = self.gesture_definitions.get(gesture_name)
+        if not gesture:
             return False
-        index_extended = (self.lm[8][2] < self.lm[6][2] - 0.03)
-        others = [12, 16, 20]
-        others_folded = all(self.lm[tid][2] > self.lm[tid-2][2]+0.015 for tid in others)
-        return index_extended and others_folded
 
-    # 2. Thumb + middle + ring
-    def is_thumb_middle_ring(self):
-        return self._group_touch(['middle', 'ring'])
+        check_type = gesture.get('check')
 
-    # 3. Thumb + index
-    def is_thumb_and_index(self):
-        return self._group_touch(['index'])
+        if check_type == "touch":
+            fingers = gesture["fingers"]
+            threshold = gesture["args"].get("distance_threshold", 40)
+            if "thumb" not in fingers or len(fingers) != 2:
+                return False
+            other_finger = [f for f in fingers if f != "thumb"][0]
+            distance = self._distance(self.finger_tips['thumb'], self.finger_tips[other_finger])
+            return distance < threshold
 
-    # 4. Thumb + middle
-    def is_thumb_and_middle(self):
-        return self._group_touch(['middle'])
+        if check_type == "group_touch":
+            fingers = gesture["fingers"]
+            threshold = gesture["args"].get("distance_threshold", 40)
+            group_fingers = [f for f in fingers if f != "thumb"]
+            return all(
+                self._distance(self.finger_tips[f], self.finger_tips['thumb']) < threshold
+                for f in group_fingers
+            )
 
-    # 5. Thumb + ring
-    def is_thumb_and_ring(self):
-        return self._group_touch(['ring'])
+        if check_type == "fist_index_up":
+            args = gesture["args"]
+            index_tip_y = self.landmarks[args["tip_ids"][0]][2]
+            index_pip_y = self.landmarks[args["pip_ids"][0]][2]
+            index_extended = index_tip_y < index_pip_y - args["index_tip_to_pip_offset"]
 
-    # 6. Thumb + pinky
-    def is_thumb_and_pinky(self):
-        return self._group_touch(['pinky'])
+            folded_status = []
+            for tip_id, pip_id in zip(args["fold_ids"], args["pip_ids"][1:]):
+                folded_status.append(
+                    self.landmarks[tip_id][2] > self.landmarks[pip_id][2] + args["others_folded_offset"]
+                )
+            others_folded = all(folded_status)
+            return index_extended and others_folded
 
-    # 7. Thumb + index + middle
-    def is_thumb_index_middle(self):
-        return (
-            self._group_touch(['index', 'middle'])
-        )
+        return False
 
-    # 8. Thumb + ring + pinky
-    def is_thumb_ring_pinky(self):
-        return self._group_touch(['ring', 'pinky'])
-
+    def _distance(self, tip1_id: int, tip2_id: int) -> float:
+        x1 = int(self.landmarks[tip1_id][1] * self.frame_width)
+        y1 = int(self.landmarks[tip1_id][2] * self.frame_height)
+        x2 = int(self.landmarks[tip2_id][1] * self.frame_width)
+        y2 = int(self.landmarks[tip2_id][2] * self.frame_height)
+        return float(np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2))

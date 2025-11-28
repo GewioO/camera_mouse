@@ -25,10 +25,6 @@ class HandTracker:
         return frame
 
     def get_hand_landmarks(self, hand_index=0):
-        """
-        Повертає список landmarks для руки: [(id, x, y, z), ...]
-        (x, y, z – нормалізовані координати MediaPipe)
-        """
         if self.results and self.results.multi_hand_landmarks:
             if hand_index < len(self.results.multi_hand_landmarks):
                 raw_landmarks = self.results.multi_hand_landmarks[hand_index]
@@ -39,9 +35,6 @@ class HandTracker:
         return None
 
     def get_finger_positions(self, frame_width, frame_height, hand_index=0):
-        """
-        Отримує позиції кінчиків пальців у пікселях (для прикладу)
-        """
         landmarks = self.get_hand_landmarks(hand_index)
         if not landmarks:
             return None
