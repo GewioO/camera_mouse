@@ -2,5 +2,43 @@
     "help": {
         "uk": "Режими запуску:\n  default: рух миші, скролл вниз, скролл вверх\n  touch: рух миші, клік (великий+вказівний), подвійний клік (великий+середній), drag-n-drop (великий+безіменний)\n  scroll: скролл вниз, скролл вверх\n  help: вивід цього опису\n  configuration: (тимчасово) не реалізовано",
         "en": "Modes:\n  default: mouse move, scroll down, scroll up\n  touch: mouse move, click (thumb+index), double click (thumb+middle), drag-n-drop (thumb+ring)\n  scroll: scroll down, scroll up\n  help: show this help\n  configuration: (temporarily) not implemented"
+    },
+    "ui": {
+        "title": {
+            "uk": "🤖 AI Hand Mouse",
+            "en": "🤖 AI Hand Mouse"
+        },
+        "profile": {
+            "uk": "Профіль: {mode}",
+            "en": "Profile: {mode}"
+        },
+        "camera": {
+            "stopped": {
+                "uk": "Камера: НЕ АКТИВНА ❌",
+                "en": "Camera: STOPPED ❌"
+            },
+            "running": {
+                "uk": "Камера: АКТИВНА ✅",
+                "en": "Camera: RUNNING ✅"
+            },
+            "starting": {
+                "uk": "Камера: ЗАПУСК",
+                "en": "Camera: STARTING"
+            }
+        },
+        "buttons": {
+            "start": {
+                "uk": "🚀 СТАРТ КАМЕРИ",
+                "en": "🚀 START CAMERA"
+            },
+            "stop": {
+                "uk": "⏹️ ВИМКНУТИ КАМЕРУ",
+                "en": "⏹️ STOP CAMERA"
+            }
+        },
+        "spinner": {
+            "uk": "⏳ Запуск камери",
+            "en": "⏳ Starting camera"
+        }
     }
 }

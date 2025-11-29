@@ -22,3 +22,7 @@ You can use pip for all dependencies.
 # Localization:
 Use --lang en for English, --lang uk for Ukrainian output.
 For example: python main.py help --lang en
+
+## UI
+You can start programm with UI mode. Now the UI mode a little bit poor :D
+Just use: python main.py or double click on main file.
