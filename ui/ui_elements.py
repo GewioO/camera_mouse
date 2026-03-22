@@ -157,6 +157,25 @@ def create_gesture_list(
     return frame
 
 
+# ── Language selector ─────────────────────────────────────────────────────────
+
+def create_lang_selector(parent: tk.Misc, current_lang: str, callback) -> None:
+    tk.Label(parent, text="🌐", font=FONTS["status_bold"]).pack(anchor="w", pady=(12, 4))
+
+    row = tk.Frame(parent)
+    row.pack(anchor="w")
+
+    for code, label in [("uk", "UA"), ("en", "EN")]:
+        active = code == current_lang
+        tk.Button(
+            row, text=label, font=FONTS["small"], width=4,
+            bg=COLORS["primary"] if active else "#e0e0e0",
+            fg=COLORS["white"] if active else "black",
+            relief="flat",
+            command=lambda c=code: callback(c),
+        ).pack(side="left", padx=(0, 4))
+
+
 # ── Profile selector ──────────────────────────────────────────────────────────
 
 def create_profile_panel(

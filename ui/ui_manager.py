@@ -12,7 +12,7 @@ from .ui_elements import (
     create_title, create_camera_labels,
     create_start_button, update_button_state, get_spinner_text,
     create_zoom_panel, update_zoom_display,
-    create_gesture_list, create_profile_panel,
+    create_gesture_list, create_profile_panel, create_lang_selector,
 )
 
 
@@ -129,6 +129,9 @@ class UIManager:
             lang=self.lang,
         )
 
+        # Right: language selector
+        create_lang_selector(right, self.lang, self._on_lang_change)
+
         # ── Bottom section: camera status + button ────────────────────────────
         bottom = tk.Frame(main_frame)
         bottom.pack(fill="x")
@@ -140,6 +143,20 @@ class UIManager:
         self.start_btn = create_start_button(bottom, self._toggle_camera, self.texts, self.lang)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _rebuild_ui(self):
+        self.profile_var = None  # nullify in UI thread before widget destroy
+        for widget in self._root.winfo_children():
+            widget.destroy()
+        self._build_ui()
+        # Re-sync runtime state
+        if self.camera_running:
+            self._update_camera_ui()
+        elif self.loading:
+            self.camera_label.config(
+                text=self.texts['ui']['camera']['starting'][self.lang],
+                fg=COLORS["warning"],
+            )
 
     def _rebuild_gesture_list(self):
         if self.gesture_frame:
@@ -175,6 +192,15 @@ class UIManager:
         self.scale = max(1.0, round(self.scale - 0.1, 1))
         update_zoom_display(self.zoom_val_label, self.zoom_canvas, self.scale)
         self.ui_to_main.put({"event": "zoom_change", "data": {"delta": -0.1}})
+
+    def _on_lang_change(self, new_lang: str):
+        if new_lang == self.lang:
+            return
+        self.lang = new_lang
+        self.cli_manager.lang = new_lang
+        self.cli_manager.main_config["lang"] = new_lang
+        self.cli_manager.persist_state()
+        self._rebuild_ui()
 
     def _on_profile_change(self, new_mode: str):
         self.cli_manager.mode = new_mode
