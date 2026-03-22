@@ -3,6 +3,14 @@
         "uk": "Режими запуску:\n  default: рух миші, скролл вниз, скролл вверх\n  touch: рух миші, клік (великий+вказівний), подвійний клік (великий+середній), drag-n-drop (великий+безіменний)\n  scroll: скролл вниз, скролл вверх\n  help: вивід цього опису\n  configuration: (тимчасово) не реалізовано",
         "en": "Modes:\n  default: mouse move, scroll down, scroll up\n  touch: mouse move, click (thumb+index), double click (thumb+middle), drag-n-drop (thumb+ring)\n  scroll: scroll down, scroll up\n  help: show this help\n  configuration: (temporarily) not implemented"
     },
+    "actions": {
+        "mouse_move":   {"uk": "Рух миші",    "en": "Mouse move"},
+        "click":        {"uk": "Клік",         "en": "Click"},
+        "double_click": {"uk": "Подв. клік",   "en": "Dbl. click"},
+        "drag":         {"uk": "Перетяг",      "en": "Drag"},
+        "scroll_up":    {"uk": "Скрол вгору",  "en": "Scroll up"},
+        "scroll_down":  {"uk": "Скрол вниз",   "en": "Scroll down"}
+    },
     "ui": {
         "title": {
             "uk": "🤖 AI Hand Mouse",
@@ -11,6 +19,18 @@
         "profile": {
             "uk": "Профіль: {mode}",
             "en": "Profile: {mode}"
+        },
+        "profile_label": {
+            "uk": "Профіль",
+            "en": "Profile"
+        },
+        "zoom": {
+            "uk": "Зум",
+            "en": "Zoom"
+        },
+        "gestures_title": {
+            "uk": "Жести:",
+            "en": "Gestures:"
         },
         "camera": {
             "stopped": {

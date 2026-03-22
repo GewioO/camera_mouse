@@ -114,8 +114,9 @@ class DisplayThread:
     def stop(self):
         self.running = False
 
-def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None):
-    scale_controller = ScaleController(cli.main_config.get("scale", 1.5))
+def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None):
+    if scale_controller is None:
+        scale_controller = ScaleController(cli.main_config.get("scale", 1.5))
     
     raw_frame_queue = queue.Queue(maxsize=3)
     display_queue = queue.Queue(maxsize=3)
@@ -253,36 +254,60 @@ def main():
     print("GUI Mode")
     ui = UIManager(json_manager)
     ui.start()
-    
+
+    main_config = json_manager.load_main_config()
+    scale_controller = ScaleController(main_config.get("scale", 1.5))
+
     camera_thread = None
     camera_running = False
     camera_stop_flag = threading.Event()
-    
+
     def on_camera_ready():
         ui.send_to_ui({"event": "camera_status", "data": {"running": True}})
-    
+
+    def start_camera():
+        nonlocal camera_running, camera_thread
+        camera_running = True
+        camera_stop_flag.clear()
+        ui.send_to_ui({"event": "camera_starting", "data": {}})
+        camera_thread = threading.Thread(
+            target=run_camera,
+            args=(ui.cli_manager, json_manager, camera_stop_flag, on_camera_ready),
+            kwargs={"scale_controller": scale_controller},
+            daemon=True,
+        )
+        camera_thread.start()
+
+    def stop_camera():
+        nonlocal camera_running
+        camera_running = False
+        camera_stop_flag.set()
+        ui.send_to_ui({"event": "camera_status", "data": {"running": False}})
+
     try:
         while True:
             signal = ui.get_signal()
-            if signal and signal["event"] == "toggle_camera":
-                print(f"Toggle camera: {'START' if not camera_running else 'STOP'}")
-                
-                if not camera_running:
-                    camera_running = True
-                    camera_stop_flag.clear()
-                    ui.send_to_ui({"event": "camera_starting", "data": {}})
-                    
-                    camera_thread = threading.Thread(
-                        target=run_camera,
-                        args=(ui.cli_manager, json_manager, camera_stop_flag, on_camera_ready),
-                        daemon=True
-                    )
-                    camera_thread.start()
-                    
-                else:
-                    camera_running = False
-                    camera_stop_flag.set()
-                    ui.send_to_ui({"event": "camera_status", "data": {"running": False}})
+            if signal:
+                event = signal["event"]
+
+                if event == "toggle_camera":
+                    print(f"Toggle camera: {'START' if not camera_running else 'STOP'}")
+                    if not camera_running:
+                        start_camera()
+                    else:
+                        stop_camera()
+
+                elif event == "zoom_change":
+                    scale_controller.increment(signal["data"]["delta"])
+                    ui.send_to_ui({"event": "zoom_update", "data": {"scale": scale_controller.get()}})
+
+                elif event == "profile_changed":
+                    print(f"Profile changed to: {signal['data']['mode']}")
+                    if camera_running:
+                        stop_camera()
+
+                elif event == "quit":
+                    break
     
             time.sleep(0.01)
             
