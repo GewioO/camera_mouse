@@ -2,14 +2,16 @@
 import threading
 import queue
 import tkinter as tk
+from tkinter import ttk
 from typing import Dict, Any
+import sv_ttk
 
 from json_manager import JsonManager
 from cli_manager import CLIManager
 
 from .ui_elements import (
     COLORS, FONTS, SPINNER_CHARS,
-    create_title, create_camera_labels,
+    setup_styles, create_title, create_camera_labels,
     create_start_button, update_button_state, get_spinner_text,
     create_zoom_panel, update_zoom_display,
     create_gesture_list, create_profile_panel, create_lang_selector,
@@ -82,6 +84,11 @@ class UIManager:
         self._root.resizable(False, False)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        sv_ttk.set_theme("dark")
+        setup_styles()
+        self._root.option_add("*TCombobox*Listbox.selectBackground", "#4DD0E1")
+        self._root.option_add("*TCombobox*Listbox.selectForeground", "#0d0d0d")
+
         self._build_ui()
         self._root.after(50, self._update_from_main)
         self._root.mainloop()
@@ -103,7 +110,7 @@ class UIManager:
         left = tk.Frame(mid)
         left.grid(row=0, column=0, sticky="nsew")
 
-        sep = tk.Frame(mid, width=1, bg=COLORS["separator"])
+        sep = ttk.Separator(mid, orient="vertical")
         sep.grid(row=0, column=1, sticky="ns", padx=10)
 
         right = tk.Frame(mid)
@@ -155,7 +162,7 @@ class UIManager:
         elif self.loading:
             self.camera_label.config(
                 text=self.texts['ui']['camera']['starting'][self.lang],
-                fg=COLORS["warning"],
+                foreground=COLORS["warning"],
             )
 
     def _rebuild_gesture_list(self):
@@ -227,7 +234,7 @@ class UIManager:
                     self.loading = True
                     self.camera_label.config(
                         text=self.texts['ui']['camera']['starting'][self.lang],
-                        fg=COLORS["warning"],
+                        foreground=COLORS["warning"],
                     )
 
                 elif event == "zoom_update":
@@ -250,7 +257,7 @@ class UIManager:
         camera_text_key = "running" if self.camera_running else "stopped"
         self.camera_label.config(
             text=self.texts['ui']['camera'][camera_text_key][self.lang],
-            fg=COLORS["success"] if self.camera_running else COLORS["danger_text"],
+            foreground=COLORS["success"] if self.camera_running else COLORS["danger_text"],
         )
         update_button_state(self.start_btn, self.texts, self.lang, self.camera_running)
         self.loading_label.config(text="")
