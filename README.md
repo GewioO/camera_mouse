@@ -11,6 +11,9 @@ You can use pip for all dependencies.
 * pip mediapipe
 * pip pynput
 
+Only for Windows:
+* pip install pygrabber
+
 ## CLI
 # Modes:
 * default: Mouse movement, scroll down, scroll up.
