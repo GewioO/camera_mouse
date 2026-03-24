@@ -1,5 +1,6 @@
 import numpy as np
 from json_manager import JsonManager
+from constants import FINGER_TIPS
 
 class PresetGestures:
     def __init__(
@@ -12,9 +13,7 @@ class PresetGestures:
         self.landmarks = landmarks
         self.frame_width = frame_width
         self.frame_height = frame_height
-        self.finger_tips = {
-            'thumb': 4, 'index': 8, 'middle': 12, 'ring': 16, 'pinky': 20
-        }
+        self.finger_tips = FINGER_TIPS
         self.json_manager = json_manager or JsonManager()
         gesture_definitions = self.json_manager.load_gestures()
         self.gesture_definitions = {gesture['name']: gesture for gesture in gesture_definitions}

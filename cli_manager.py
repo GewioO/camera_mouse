@@ -63,6 +63,17 @@ class CLIManager:
     def persist_state(self) -> None:
         self.json_manager.save_main_config(self.main_config)
 
+    def set_lang(self, new_lang: str) -> None:
+        self.lang = new_lang
+        self.main_config["lang"] = new_lang
+        self.persist_state()
+
+    def set_profile(self, new_mode: str) -> None:
+        self.mode = new_mode
+        self.current_profile = self.profiles[new_mode]
+        self.main_config["last_profile"] = new_mode
+        self.persist_state()
+
     @property
     def available_modes(self) -> list:
         profile_modes = list(self.profiles.keys())

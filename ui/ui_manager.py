@@ -204,16 +204,11 @@ class UIManager:
         if new_lang == self.lang:
             return
         self.lang = new_lang
-        self.cli_manager.lang = new_lang
-        self.cli_manager.main_config["lang"] = new_lang
-        self.cli_manager.persist_state()
+        self.cli_manager.set_lang(new_lang)
         self._rebuild_ui()
 
     def _on_profile_change(self, new_mode: str):
-        self.cli_manager.mode = new_mode
-        self.cli_manager.current_profile = self.cli_manager.profiles[new_mode]
-        self.cli_manager.main_config["last_profile"] = new_mode
-        self.cli_manager.persist_state()
+        self.cli_manager.set_profile(new_mode)
         self._rebuild_gesture_list()
         self.ui_to_main.put({"event": "profile_changed", "data": {"mode": new_mode}})
 

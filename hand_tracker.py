@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+from constants import FINGER_TIPS
 
 class HandTracker:
     def __init__(self, max_hands=1, detection_confidence=0.7, tracking_confidence=0.7):
@@ -38,15 +39,8 @@ class HandTracker:
         landmarks = self.get_hand_landmarks(hand_index)
         if not landmarks:
             return None
-        finger_tips = {
-            'thumb': 4,
-            'index': 8,
-            'middle': 12,
-            'ring': 16,
-            'pinky': 20
-        }
         positions = {}
-        for name, tip_id in finger_tips.items():
+        for name, tip_id in FINGER_TIPS.items():
             landmark = landmarks[tip_id]
             x = int(landmark[1] * frame_width)
             y = int(landmark[2] * frame_height)
