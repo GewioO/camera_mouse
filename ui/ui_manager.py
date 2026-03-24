@@ -8,6 +8,8 @@ import sv_ttk
 
 from json_manager import JsonManager
 from cli_manager import CLIManager
+from scale_controller import ScaleController
+from constants import SCALE_STEP
 
 from .ui_elements import (
     COLORS, FONTS, SPINNER_CHARS,
@@ -19,9 +21,10 @@ from .ui_elements import (
 
 
 class UIManager:
-    def __init__(self, json_manager: JsonManager):
+    def __init__(self, json_manager: JsonManager, scale_controller: ScaleController):
         self.json_manager = json_manager
         self.cli_manager = CLIManager(json_manager)
+        self._scale_ctrl = scale_controller
         self.texts = json_manager.load_texts()
         self.gestures_data = json_manager.load_gestures()
 
@@ -38,7 +41,6 @@ class UIManager:
 
         main_config = json_manager.load_main_config()
         self.lang = main_config.get('lang', 'uk')
-        self.scale = main_config.get('scale', 1.5)
 
         # Widget references
         self.camera_label = None
@@ -118,7 +120,7 @@ class UIManager:
 
         # Left: zoom
         self.zoom_val_label, self.zoom_canvas = create_zoom_panel(
-            left, self.scale, self.texts, self.lang,
+            left, self._scale_ctrl.get(), self.texts, self.lang,
             on_zoom_up=self._on_zoom_up,
             on_zoom_down=self._on_zoom_down,
         )
@@ -191,14 +193,12 @@ class UIManager:
         self.ui_to_main.put({"event": "toggle_camera", "data": {}})
 
     def _on_zoom_up(self):
-        self.scale = min(3.0, round(self.scale + 0.1, 1))
-        update_zoom_display(self.zoom_val_label, self.zoom_canvas, self.scale)
-        self.ui_to_main.put({"event": "zoom_change", "data": {"delta": 0.1}})
+        self._scale_ctrl.increment(SCALE_STEP)
+        update_zoom_display(self.zoom_val_label, self.zoom_canvas, self._scale_ctrl.get())
 
     def _on_zoom_down(self):
-        self.scale = max(1.0, round(self.scale - 0.1, 1))
-        update_zoom_display(self.zoom_val_label, self.zoom_canvas, self.scale)
-        self.ui_to_main.put({"event": "zoom_change", "data": {"delta": -0.1}})
+        self._scale_ctrl.increment(-SCALE_STEP)
+        update_zoom_display(self.zoom_val_label, self.zoom_canvas, self._scale_ctrl.get())
 
     def _on_lang_change(self, new_lang: str):
         if new_lang == self.lang:
@@ -231,11 +231,6 @@ class UIManager:
                         text=self.texts['ui']['camera']['starting'][self.lang],
                         foreground=COLORS["warning"],
                     )
-
-                elif event == "zoom_update":
-                    self.scale = msg["data"]["scale"]
-                    if self.zoom_val_label:
-                        update_zoom_display(self.zoom_val_label, self.zoom_canvas, self.scale)
 
             except queue.Empty:
                 break

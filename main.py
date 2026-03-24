@@ -9,6 +9,15 @@ from ui.ui_manager import UIManager
 from hand_tracker import HandTracker
 from mouse_controller import MouseController
 from preset_gestures import PresetGestures
+from scale_controller import ScaleController
+from constants import (
+    FRAME_WIDTH, FRAME_HEIGHT,
+    DEFAULT_SCALE,
+    MOUSE_SMOOTHING,
+    SCROLL_DECAY, SCROLL_AMOUNT, SCROLL_VELOCITY_STEP,
+    COOLDOWN_FRAMES,
+    QUEUE_MAXSIZE,
+)
 
 def zoom_frame(frame, scale=1.5):
     if scale <= 1.0:
@@ -21,28 +30,12 @@ def zoom_frame(frame, scale=1.5):
     start_y = center_y - h // 2
     return resized[start_y:start_y + h, start_x:start_x + w]
 
-class ScaleController:
-    def __init__(self, initial_scale=1.5):
-        self.scale = initial_scale
-        self.lock = threading.Lock()
-    
-    def get(self):
-        with self.lock:
-            return self.scale
-    
-    def set(self, value):
-        with self.lock:
-            self.scale = max(1.0, min(3.0, value))
-    
-    def increment(self, delta):
-        with self.lock:
-            self.scale = max(1.0, min(3.0, self.scale + delta))
 
 class VideoThread:
     def __init__(self, scale_controller):
         self.cap = cv2.VideoCapture(0)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
         self.scale_controller = scale_controller
         self.running = True
 
@@ -116,10 +109,10 @@ class DisplayThread:
 
 def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None):
     if scale_controller is None:
-        scale_controller = ScaleController(cli.main_config.get("scale", 1.5))
-    
-    raw_frame_queue = queue.Queue(maxsize=3)
-    display_queue = queue.Queue(maxsize=3)
+        scale_controller = ScaleController(cli.main_config.get("scale", DEFAULT_SCALE))
+
+    raw_frame_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
+    display_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
 
     # for Mediapipe
     video_thread = VideoThread(scale_controller)
@@ -135,9 +128,8 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
         on_ready_callback()
 
     tracker = HandTracker(max_hands=1)
-    mouse = MouseController(640, 480, smoothing=7)
+    mouse = MouseController(FRAME_WIDTH, FRAME_HEIGHT, smoothing=MOUSE_SMOOTHING)
     scroll_velocity = 0
-    scroll_decay, scroll_step = 0.3, 0.7
 
     profile = cli.current_profile
     print("=== Mode:", cli.mode, "===")
@@ -148,7 +140,6 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     drag_active = False
     gesture_was_active = {}
     action_cooldown = {}
-    COOLDOWN_FRAMES = 15
 
     try:
         while not (stop_flag and stop_flag.is_set()):
@@ -204,15 +195,15 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
 
                     elif action in CONTINUOUS_ACTIONS and gesture_now:
                         if action == "scroll_down":
-                            scroll_velocity += 2
+                            scroll_velocity += SCROLL_VELOCITY_STEP
                             display_thread.add_ui_command("SCROLL DWON", (50, 200), (0, 255, 0), duration=5)
                         elif action == "scroll_up":
-                            scroll_velocity -= 2
+                            scroll_velocity -= SCROLL_VELOCITY_STEP
                             display_thread.add_ui_command("SCROLL UP", (50, 230), (255, 255, 0), duration=5)
 
             if abs(scroll_velocity) >= 1:
-                mouse.scroll('down' if scroll_velocity > 0 else 'up', amount=scroll_step)
-                scroll_velocity *= scroll_decay
+                mouse.scroll('down' if scroll_velocity > 0 else 'up', amount=SCROLL_AMOUNT)
+                scroll_velocity *= SCROLL_DECAY
 
             try:
                 display_queue.put_nowait(frame_with_hands)
@@ -252,11 +243,10 @@ def main():
         return
     
     print("GUI Mode")
-    ui = UIManager(json_manager)
-    ui.start()
-
     main_config = json_manager.load_main_config()
-    scale_controller = ScaleController(main_config.get("scale", 1.5))
+    scale_controller = ScaleController(main_config.get("scale", DEFAULT_SCALE))
+    ui = UIManager(json_manager, scale_controller)
+    ui.start()
 
     camera_thread = None
     camera_running = False
@@ -296,10 +286,6 @@ def main():
                         start_camera()
                     else:
                         stop_camera()
-
-                elif event == "zoom_change":
-                    scale_controller.increment(signal["data"]["delta"])
-                    ui.send_to_ui({"event": "zoom_update", "data": {"scale": scale_controller.get()}})
 
                 elif event == "profile_changed":
                     print(f"Profile changed to: {signal['data']['mode']}")
