@@ -10,9 +10,10 @@ from hand_tracker import HandTracker
 from mouse_controller import MouseController
 from preset_gestures import PresetGestures
 from scale_controller import ScaleController
+from camera_manager import open_camera
 from constants import (
     FRAME_WIDTH, FRAME_HEIGHT,
-    DEFAULT_SCALE,
+    DEFAULT_SCALE, DEFAULT_CAMERA_ID,
     MOUSE_SMOOTHING,
     SCROLL_DECAY, SCROLL_AMOUNT, SCROLL_VELOCITY_STEP,
     COOLDOWN_FRAMES,
@@ -32,8 +33,8 @@ def zoom_frame(frame, scale=1.5):
 
 
 class VideoThread:
-    def __init__(self, scale_controller):
-        self.cap = cv2.VideoCapture(0)
+    def __init__(self, scale_controller, camera_id: int = DEFAULT_CAMERA_ID):
+        self.cap = open_camera(camera_id)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
         self.scale_controller = scale_controller
@@ -115,7 +116,8 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     display_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
 
     # for Mediapipe
-    video_thread = VideoThread(scale_controller)
+    camera_id = cli.main_config.get("camera_id", DEFAULT_CAMERA_ID)
+    video_thread = VideoThread(scale_controller, camera_id=camera_id)
     video_t = threading.Thread(target=video_thread.run, args=(raw_frame_queue,), daemon=True)
     video_t.start()
 

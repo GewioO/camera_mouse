@@ -74,6 +74,10 @@ class CLIManager:
         self.main_config["last_profile"] = new_mode
         self.persist_state()
 
+    def set_camera_id(self, camera_id: int) -> None:
+        self.main_config["camera_id"] = camera_id
+        self.persist_state()
+
     @property
     def available_modes(self) -> list:
         profile_modes = list(self.profiles.keys())

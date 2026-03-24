@@ -213,6 +213,35 @@ def create_gesture_list(
     return frame
 
 
+# ── Camera selector ───────────────────────────────────────────────────────────
+
+def create_camera_selector(
+    parent: tk.Misc,
+    cameras: list,
+    camera_names: list,
+    current_id: int,
+    callback,
+    texts: dict,
+    lang: str,
+) -> ttk.Combobox:
+    ttk.Label(parent, text=texts['ui']['camera_label'][lang],
+               font=FONTS["status_bold"]).pack(anchor="w", pady=(8, 4))
+
+    current_name = camera_names[cameras.index(current_id)] if current_id in cameras else camera_names[0]
+    var = tk.StringVar(value=current_name)
+    combo = ttk.Combobox(parent, textvariable=var, values=camera_names,
+                          state="readonly", width=14, font=FONTS["status"])
+
+    def _on_select(event):
+        selected = var.get()
+        idx = camera_names.index(selected)
+        callback(cameras[idx])
+
+    combo.bind("<<ComboboxSelected>>", _on_select)
+    combo.pack(anchor="w")
+    return combo
+
+
 # ── Language selector ─────────────────────────────────────────────────────────
 
 def create_lang_selector(parent: tk.Misc, current_lang: str, callback) -> None:

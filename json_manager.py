@@ -36,7 +36,8 @@ class JsonManager:
         default_config = {
             "last_profile": "default",
             "lang": "uk",
-            "scale": 1.5
+            "scale": 1.5,
+            "camera_id": 0,
         }
         config = self.load_json("main_config.json", default=None)
         if config is None:

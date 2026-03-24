@@ -1,11 +1,11 @@
 {
-    "last_profile": "scroll",
-    "lang": "en",
+    "last_profile": "touch",
+    "lang": "uk",
     "scale": 1.0,
     "window_position": [
         100,
         100
     ],
     "gesture_sensitivity": 40,
-    "camera_id": 0
+    "camera_id": 4
 }

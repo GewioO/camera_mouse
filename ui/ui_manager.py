@@ -9,7 +9,8 @@ import sv_ttk
 from json_manager import JsonManager
 from cli_manager import CLIManager
 from scale_controller import ScaleController
-from constants import SCALE_STEP
+from camera_manager import enumerate_cameras, get_camera_name
+from constants import SCALE_STEP, DEFAULT_CAMERA_ID
 
 from .ui_elements import (
     COLORS, FONTS, SPINNER_CHARS,
@@ -17,6 +18,7 @@ from .ui_elements import (
     create_start_button, update_button_state, get_spinner_text,
     create_zoom_panel, update_zoom_display,
     create_gesture_list, create_profile_panel, create_lang_selector,
+    create_camera_selector,
 )
 
 
@@ -42,6 +44,11 @@ class UIManager:
         main_config = json_manager.load_main_config()
         self.lang = main_config.get('lang', 'uk')
 
+        self.available_cameras = enumerate_cameras()
+        self.camera_names = [
+            f"{get_camera_name(i)} ({i})" for i in self.available_cameras
+        ]
+
         # Widget references
         self.camera_label = None
         self.loading_label = None
@@ -51,6 +58,7 @@ class UIManager:
         self.gesture_frame = None
         self.gesture_list_parent = None
         self.profile_var = None
+        self.camera_selector: ttk.Combobox | None = None
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -138,6 +146,16 @@ class UIManager:
             lang=self.lang,
         )
 
+        # Right: camera selector
+        current_camera_id = self.cli_manager.main_config.get("camera_id", DEFAULT_CAMERA_ID)
+        self.camera_selector = create_camera_selector(
+            right, self.available_cameras, self.camera_names,
+            current_camera_id,
+            callback=self._on_camera_change,
+            texts=self.texts,
+            lang=self.lang,
+        )
+
         # Right: language selector
         create_lang_selector(right, self.lang, self._on_lang_change)
 
@@ -155,6 +173,7 @@ class UIManager:
 
     def _rebuild_ui(self):
         self.profile_var = None  # nullify in UI thread before widget destroy
+        self.camera_selector = None
         for widget in self._root.winfo_children():
             widget.destroy()
         self._build_ui()
@@ -212,6 +231,9 @@ class UIManager:
         self._rebuild_gesture_list()
         self.ui_to_main.put({"event": "profile_changed", "data": {"mode": new_mode}})
 
+    def _on_camera_change(self, camera_id: int):
+        self.cli_manager.set_camera_id(camera_id)
+
     # ── Update loop ───────────────────────────────────────────────────────────
 
     def _update_from_main(self):
@@ -231,6 +253,8 @@ class UIManager:
                         text=self.texts['ui']['camera']['starting'][self.lang],
                         foreground=COLORS["warning"],
                     )
+                    if self.camera_selector:
+                        self.camera_selector['state'] = "disabled"
 
             except queue.Empty:
                 break
@@ -251,3 +275,5 @@ class UIManager:
         )
         update_button_state(self.start_btn, self.texts, self.lang, self.camera_running)
         self.loading_label.config(text="")
+        if self.camera_selector:
+            self.camera_selector['state'] = "disabled" if self.camera_running else "readonly"

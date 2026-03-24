@@ -24,6 +24,10 @@
             "uk": "Профіль",
             "en": "Profile"
         },
+        "camera_label": {
+            "uk": "Камера",
+            "en": "Camera"
+        },
         "zoom": {
             "uk": "Зум",
             "en": "Zoom"
