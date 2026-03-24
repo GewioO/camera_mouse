@@ -5,13 +5,15 @@ This tool allows users to control the mouse cursor, perform scrolling actions, a
 ## Dependencies:
 You can use pip for all dependencies.
 * python 3.11
-* opencv 4.12.0.88: pip install opencv-python
+* pip install opencv-python
 * pip install numpy
-* pip opencv-contrib-python
-* pip mediapipe
-* pip pynput
+* pip install opencv-contrib-python
+* pip install mediapipe
+* pip install pynput
+* pip install autopy
+* pip install sv-ttk
 
-Only for Windows:
+Only for Windows (optional, for camera names):
 * pip install pygrabber
 
 ## CLI
