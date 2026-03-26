@@ -8,7 +8,7 @@ You can use pip for all dependencies.
 * pip install opencv-python
 * pip install numpy
 * pip install opencv-contrib-python
-* pip install mediapipe
+* pip install mediapipe==0.10.14
 * pip install pynput
 * pip install autopy
 * pip install sv-ttk
