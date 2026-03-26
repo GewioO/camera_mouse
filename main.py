@@ -10,7 +10,7 @@ from hand_tracker import HandTracker
 from mouse_controller import MouseController
 from preset_gestures import PresetGestures
 from scale_controller import ScaleController
-from camera_manager import open_camera
+from camera_manager import open_camera, enumerate_cameras
 from constants import (
     FRAME_WIDTH, FRAME_HEIGHT,
     DEFAULT_SCALE, DEFAULT_CAMERA_ID,
@@ -46,85 +46,60 @@ class VideoThread:
             if not ret:
                 time.sleep(0.01)
                 continue
-            
+
             frame = cv2.flip(frame, 1)
-            
+
             current_scale = self.scale_controller.get()
             frame_zoomed = zoom_frame(frame, current_scale)
-            
+
             try:
                 frame_queue.put_nowait(frame_zoomed)
             except queue.Full:
                 pass
-            
+
             time.sleep(0.001)
 
     def stop(self):
         self.running = False
         self.cap.release()
 
-class DisplayThread:
-    def __init__(self, frame_queue, scale_controller):
-        self.frame_queue = frame_queue
+class DisplayOverlay:
+    def __init__(self, scale_controller):
         self.scale_controller = scale_controller
-        self.running = True
         self.ui_commands = []
 
     def add_ui_command(self, text, position, color, duration=20):
         self.ui_commands.append({"text": text, "pos": position, "color": color, "frames": duration})
 
-    def run(self):
-        while self.running:
-            try:
-                frame = self.frame_queue.get(timeout=0.01)
-                current_scale = self.scale_controller.get()
-                
-                cv2.putText(frame, f"ZOOM: {current_scale:.2f}x [+/-]", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 255), 2)
-                
-                for cmd in self.ui_commands[:]:
-                    cv2.putText(frame, cmd["text"], cmd["pos"],
-                               cv2.FONT_HERSHEY_SIMPLEX, 1.1, cmd["color"], 3)
-                    cmd["frames"] -= 1
-                    if cmd["frames"] <= 0:
-                        self.ui_commands.remove(cmd)
-                
-                cv2.imshow("AI Hand Mouse CLI", frame)
-                key = cv2.waitKey(1) & 0xFF
-                
-                if key == ord('+') or key == ord('='):
-                    self.scale_controller.increment(0.1)
-                elif key == ord('-'):
-                    self.scale_controller.increment(-0.1)
-                elif key == ord('q'):
-                    self.running = False
-                
-                self.frame_queue.task_done()
-            except queue.Empty:
-                continue
-            except:
-                continue
+    def draw(self, frame):
+        current_scale = self.scale_controller.get()
+        cv2.putText(frame, f"ZOOM: {current_scale:.2f}x [+/-]", (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 255), 2)
+        for cmd in self.ui_commands[:]:
+            cv2.putText(frame, cmd["text"], cmd["pos"],
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.1, cmd["color"], 3)
+            cmd["frames"] -= 1
+            if cmd["frames"] <= 0:
+                self.ui_commands.remove(cmd)
 
-    def stop(self):
-        self.running = False
-
-def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None):
+def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None,
+               display_queue=None):
     if scale_controller is None:
         scale_controller = ScaleController(cli.main_config.get("scale", DEFAULT_SCALE))
 
     raw_frame_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
-    display_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
 
-    # for Mediapipe
     camera_id = cli.main_config.get("camera_id", DEFAULT_CAMERA_ID)
+    available = enumerate_cameras()
+    if camera_id not in available:
+        camera_id = available[0]
+        cli.main_config["camera_id"] = camera_id
+        print(f"Saved camera_id not available, falling back to camera {camera_id}")
     video_thread = VideoThread(scale_controller, camera_id=camera_id)
     video_t = threading.Thread(target=video_thread.run, args=(raw_frame_queue,), daemon=True)
     video_t.start()
 
-    # Showed video and check keys
-    display_thread = DisplayThread(display_queue, scale_controller)
-    display_t = threading.Thread(target=display_thread.run, daemon=True)
-    display_t.start()
+    display_overlay = DisplayOverlay(scale_controller)
 
     if on_ready_callback:
         on_ready_callback()
@@ -146,7 +121,6 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     try:
         while not (stop_flag and stop_flag.is_set()):
             try:
-                # Get zoomed for mediaipe
                 frame_zoomed = raw_frame_queue.get_nowait()
             except queue.Empty:
                 time.sleep(0.001)
@@ -178,39 +152,53 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
 
                     if action in ONE_SHOT_ACTIONS and edge_triggered:
                         action_cooldown[action] = COOLDOWN_FRAMES
-                        
+
                         if action == "click":
                             mouse.click('left')
-                            display_thread.add_ui_command("CLICK!", (50, 50), (0, 0, 255))
+                            display_overlay.add_ui_command("CLICK!", (50, 50), (0, 0, 255))
                         elif action == "double_click":
                             mouse.double_click()
-                            display_thread.add_ui_command("DCLICK!", (50, 80), (255, 0, 255))
+                            display_overlay.add_ui_command("DCLICK!", (50, 80), (255, 0, 255))
                         elif action == "drag":
                             mouse.toggle_drag(start=True)
                             drag_active = True
-                            display_thread.add_ui_command("DRAG ON", (50, 110), (0, 255, 255))
+                            display_overlay.add_ui_command("DRAG ON", (50, 110), (0, 255, 255))
 
                     elif action == "drag" and not gesture_now and drag_active:
                         mouse.toggle_drag(start=False)
                         drag_active = False
-                        display_thread.add_ui_command("DRAG OFF", (50, 110), (0, 165, 255))
+                        display_overlay.add_ui_command("DRAG OFF", (50, 110), (0, 165, 255))
 
                     elif action in CONTINUOUS_ACTIONS and gesture_now:
                         if action == "scroll_down":
                             scroll_velocity += SCROLL_VELOCITY_STEP
-                            display_thread.add_ui_command("SCROLL DWON", (50, 200), (0, 255, 0), duration=5)
+                            display_overlay.add_ui_command("SCROLL DWON", (50, 200), (0, 255, 0), duration=5)
                         elif action == "scroll_up":
                             scroll_velocity -= SCROLL_VELOCITY_STEP
-                            display_thread.add_ui_command("SCROLL UP", (50, 230), (255, 255, 0), duration=5)
+                            display_overlay.add_ui_command("SCROLL UP", (50, 230), (255, 255, 0), duration=5)
 
             if abs(scroll_velocity) >= 1:
                 mouse.scroll('down' if scroll_velocity > 0 else 'up', amount=SCROLL_AMOUNT)
                 scroll_velocity *= SCROLL_DECAY
 
-            try:
-                display_queue.put_nowait(frame_with_hands)
-            except queue.Full:
-                pass
+            display_overlay.draw(frame_with_hands)
+
+            if display_queue is not None:
+                # GUI mode: send frame to main thread for display
+                try:
+                    display_queue.put_nowait(frame_with_hands)
+                except queue.Full:
+                    pass
+            else:
+                # CLI mode: display directly (already in main thread)
+                cv2.imshow("AI Hand Mouse", frame_with_hands)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('+') or key == ord('='):
+                    scale_controller.increment(0.1)
+                elif key == ord('-'):
+                    scale_controller.increment(-0.1)
+                elif key == ord('q'):
+                    break
 
             time.sleep(0.001)
 
@@ -221,10 +209,10 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
         if drag_active:
             mouse.toggle_drag(start=False)
         cli.persist_state()
-        display_thread.stop()
         video_thread.stop()
         tracker.close()
-        cv2.destroyAllWindows()
+        if display_queue is None:
+            cv2.destroyAllWindows()
         time.sleep(0.5)
         print("Camera stopped")
 
@@ -232,9 +220,9 @@ def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("mode", nargs="?", default=None)
     args = parser.parse_args()
-    
+
     json_manager = JsonManager()
-    
+
     if args.mode:
         cli = CLIManager(json_manager)
         if cli.is_help_requested():
@@ -243,7 +231,7 @@ def main():
         print(f"CLI Mode: {cli.mode}")
         run_camera(cli, json_manager)
         return
-    
+
     print("GUI Mode")
     main_config = json_manager.load_main_config()
     scale_controller = ScaleController(main_config.get("scale", DEFAULT_SCALE))
@@ -253,6 +241,7 @@ def main():
     camera_thread = None
     camera_running = False
     camera_stop_flag = threading.Event()
+    display_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
 
     def on_camera_ready():
         ui.send_to_ui({"event": "camera_status", "data": {"running": True}})
@@ -265,7 +254,7 @@ def main():
         camera_thread = threading.Thread(
             target=run_camera,
             args=(ui.cli_manager, json_manager, camera_stop_flag, on_camera_ready),
-            kwargs={"scale_controller": scale_controller},
+            kwargs={"scale_controller": scale_controller, "display_queue": display_queue},
             daemon=True,
         )
         camera_thread.start()
@@ -288,21 +277,37 @@ def main():
                         start_camera()
                     else:
                         stop_camera()
+                        cv2.destroyAllWindows()
 
                 elif event == "profile_changed":
                     print(f"Profile changed to: {signal['data']['mode']}")
                     if camera_running:
                         stop_camera()
+                        cv2.destroyAllWindows()
 
                 elif event == "quit":
                     break
-    
+
+            # Display frame from camera thread in main thread
+            if camera_running:
+                try:
+                    frame = display_queue.get_nowait()
+                    cv2.imshow("AI Hand Mouse", frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('+') or key == ord('='):
+                        scale_controller.increment(0.1)
+                    elif key == ord('-'):
+                        scale_controller.increment(-0.1)
+                except queue.Empty:
+                    pass
+
             time.sleep(0.01)
-            
+
     except KeyboardInterrupt:
         pass
     finally:
         camera_stop_flag.set()
+        cv2.destroyAllWindows()
         ui.stop()
 
 if __name__ == "__main__":

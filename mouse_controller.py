@@ -74,10 +74,11 @@ class MouseController:
     
     def scroll(self, direction, amount=3):
         try:
+            clicks = max(1, round(amount))
             if direction == 'up':
-                self.pynput_mouse.scroll(0, amount)
+                self.pynput_mouse.scroll(0, clicks)
             elif direction == 'down':
-                self.pynput_mouse.scroll(0, -amount)
+                self.pynput_mouse.scroll(0, -clicks)
         except Exception as e:
             print(f"Scroll error: {e}")
     

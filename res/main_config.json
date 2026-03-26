@@ -1,5 +1,5 @@
 {
-    "last_profile": "touch",
+    "last_profile": "default",
     "lang": "uk",
     "scale": 1.0,
     "window_position": [
@@ -7,5 +7,5 @@
         100
     ],
     "gesture_sensitivity": 40,
-    "camera_id": 4
+    "camera_id": 0
 }
