@@ -13,13 +13,15 @@ from camera_manager import enumerate_cameras, get_camera_name
 from constants import SCALE_STEP, DEFAULT_CAMERA_ID
 
 from .ui_elements import (
-    COLORS, FONTS, SPINNER_CHARS,
+    COLORS, FONTS, SPINNER_CHARS, TEAL, TEAL_HOVER, DANGER, DANGER_HOVER,
     setup_styles, create_title, create_camera_labels,
     create_start_button, update_button_state, get_spinner_text,
     create_zoom_panel, update_zoom_display,
     create_gesture_list, create_profile_panel, create_lang_selector,
     create_camera_selector,
 )
+from .profile_builder_controller import ProfileBuilderController
+from .profile_builder_ui import ProfileBuilderWindow
 
 
 class UIManager:
@@ -49,6 +51,9 @@ class UIManager:
             f"{get_camera_name(i)} ({i})" for i in self.available_cameras
         ]
 
+        # Profiles that cannot be deleted
+        self._protected_profiles = {"default", "scroll"}
+
         # Widget references
         self.camera_label = None
         self.loading_label = None
@@ -58,6 +63,8 @@ class UIManager:
         self.gesture_frame = None
         self.gesture_list_parent = None
         self.profile_var = None
+        self.profile_combo: ttk.Combobox | None = None
+        self.delete_profile_btn: tk.Button | None = None
         self.camera_selector: ttk.Combobox | None = None
 
     def start(self):
@@ -90,8 +97,9 @@ class UIManager:
     def _ui_mainloop(self):
         self._root = tk.Tk()
         self._root.title("AI Hand Mouse")
-        self._root.geometry("640x360")
-        self._root.resizable(False, False)
+        self._root.geometry("640x460")
+        self._root.minsize(560, 400)
+        self._root.resizable(True, True)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         sv_ttk.set_theme("dark")
@@ -110,9 +118,19 @@ class UIManager:
 
         create_title(main_frame, self.texts, self.lang)
 
+        # ── Bottom section packed first so mid can fill remaining space ────────
+        bottom = tk.Frame(main_frame)
+        bottom.pack(side="bottom", fill="x", pady=(8, 0))
+
+        status_row = tk.Frame(bottom)
+        status_row.pack()
+        self.camera_label, self.loading_label = create_camera_labels(status_row, self.texts, self.lang)
+
+        self.start_btn = create_start_button(bottom, self._toggle_camera, self.texts, self.lang)
+
         # ── Middle section: left | sep | right ────────────────────────────────
         mid = tk.Frame(main_frame)
-        mid.pack(fill="both", expand=True, pady=(0, 8))
+        mid.pack(fill="both", expand=True, pady=(0, 4))
         mid.columnconfigure(0, weight=3)
         mid.columnconfigure(2, weight=2)
         mid.rowconfigure(0, weight=1)
@@ -137,14 +155,32 @@ class UIManager:
         self.gesture_list_parent = left
         self._rebuild_gesture_list()
 
-        # Right: profile selector
+        # Right: profile selector + buttons
         profile_names = list(self.cli_manager.profiles.keys())
-        self.profile_var = create_profile_panel(
+        self.profile_var, self.profile_combo = create_profile_panel(
             right, profile_names, self.cli_manager.mode,
             callback=self._on_profile_change,
             texts=self.texts,
             lang=self.lang,
         )
+        tk.Button(
+            right,
+            text=self.texts['ui']['add_profile_btn'][self.lang],
+            font=FONTS["small"], bg=TEAL, fg="#0d0d0d",
+            activebackground=TEAL_HOVER, activeforeground="#0d0d0d",
+            relief="flat", padx=6, pady=2,
+            command=self._open_profile_builder,
+        ).pack(anchor="w", pady=(4, 0))
+
+        self.delete_profile_btn = tk.Button(
+            right,
+            text=self.texts['ui']['delete_profile_btn'][self.lang],
+            font=FONTS["small"],
+            relief="flat", padx=6, pady=2,
+            command=self._on_delete_profile,
+        )
+        self.delete_profile_btn.pack(anchor="w", pady=(2, 0))
+        self._update_delete_btn()
 
         # Right: camera selector
         current_camera_id = self.cli_manager.main_config.get("camera_id", DEFAULT_CAMERA_ID)
@@ -159,20 +195,12 @@ class UIManager:
         # Right: language selector
         create_lang_selector(right, self.lang, self._on_lang_change)
 
-        # ── Bottom section: camera status + button ────────────────────────────
-        bottom = tk.Frame(main_frame)
-        bottom.pack(fill="x")
-
-        status_row = tk.Frame(bottom)
-        status_row.pack()
-        self.camera_label, self.loading_label = create_camera_labels(status_row, self.texts, self.lang)
-
-        self.start_btn = create_start_button(bottom, self._toggle_camera, self.texts, self.lang)
-
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _rebuild_ui(self):
         self.profile_var = None  # nullify in UI thread before widget destroy
+        self.profile_combo = None
+        self.delete_profile_btn = None
         self.camera_selector = None
         for widget in self._root.winfo_children():
             widget.destroy()
@@ -201,9 +229,11 @@ class UIManager:
 
     def _on_close(self):
         self._running = False
-        # Nullify tkinter variable in UI thread before destroy to avoid
+        # Nullify tkinter variables in UI thread before destroy to avoid
         # "main thread is not in main loop" RuntimeError on GC
         self.profile_var = None
+        self.profile_combo = None
+        self.delete_profile_btn = None
         if self._root:
             self._root.destroy()
         self.ui_to_main.put({"event": "quit", "data": {}})
@@ -229,10 +259,64 @@ class UIManager:
     def _on_profile_change(self, new_mode: str):
         self.cli_manager.set_profile(new_mode)
         self._rebuild_gesture_list()
+        self._update_delete_btn()
         self.ui_to_main.put({"event": "profile_changed", "data": {"mode": new_mode}})
 
     def _on_camera_change(self, camera_id: int):
         self.cli_manager.set_camera_id(camera_id)
+
+    def _update_delete_btn(self):
+        if self.delete_profile_btn is None:
+            return
+        protected = self.cli_manager.mode in self._protected_profiles
+        if protected:
+            self.delete_profile_btn.config(
+                state="disabled", bg="#555555", fg="#888888",
+                activebackground="#555555", activeforeground="#888888",
+            )
+        else:
+            self.delete_profile_btn.config(
+                state="normal", bg=DANGER, fg="#ffffff",
+                activebackground=DANGER_HOVER, activeforeground="#ffffff",
+            )
+
+    def _on_delete_profile(self):
+        mode = self.cli_manager.mode
+        if mode in self._protected_profiles:
+            return
+
+        profiles = self.json_manager.load_profiles()
+        profiles.pop(mode, None)
+        self.json_manager.save_json("profile_config.json", profiles)
+
+        self.cli_manager.profiles = profiles
+
+        # Switch to first available profile
+        new_mode = next(iter(profiles), "default")
+        new_names = list(profiles.keys())
+
+        if self.profile_var:
+            self.profile_var.set(new_mode)
+        if self.profile_combo:
+            self.profile_combo["values"] = new_names
+
+        self._on_profile_change(new_mode)
+
+    def _open_profile_builder(self):
+        controller = ProfileBuilderController(self.json_manager, self.lang)
+        ProfileBuilderWindow(
+            self._root, controller, self.lang, self.texts,
+            on_save_callback=self._on_new_profile_saved,
+        )
+
+    def _on_new_profile_saved(self, name: str):
+        self.cli_manager.profiles = self.json_manager.load_profiles()
+        new_names = list(self.cli_manager.profiles.keys())
+        if self.profile_var:
+            self.profile_var.set(name)
+        if self.profile_combo:
+            self.profile_combo["values"] = new_names
+        self._on_profile_change(name)
 
     # ── Update loop ───────────────────────────────────────────────────────────
 

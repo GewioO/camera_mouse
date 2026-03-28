@@ -269,7 +269,7 @@ def create_lang_selector(parent: tk.Misc, current_lang: str, callback) -> None:
 def create_profile_panel(
     parent: tk.Misc, profiles: list, current_mode: str,
     callback, texts: dict, lang: str,
-) -> tk.StringVar:
+) -> Tuple[tk.StringVar, ttk.Combobox]:
     ttk.Label(parent, text=texts['ui']['profile_label'][lang],
                font=FONTS["status_bold"]).pack(anchor="w", pady=(0, 4))
 
@@ -279,4 +279,4 @@ def create_profile_panel(
     combo.bind("<<ComboboxSelected>>", lambda e: callback(var.get()))
     combo.pack(anchor="w")
 
-    return var
+    return var, combo

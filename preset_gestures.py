@@ -62,6 +62,37 @@ class PresetGestures:
             others_folded = all(folded_status)
             return index_extended and others_folded
 
+        if check_type == "fist_fingers_up":
+            args = gesture["args"]
+            if len(self.landmarks) < 21:
+                return False
+            extended_offset = args.get("extended_offset", 0.03)
+            folded_offset = args.get("folded_offset", 0.015)
+            for tip_id, pip_id in zip(args["extended_tip_ids"], args["extended_pip_ids"]):
+                if self.landmarks[tip_id][2] >= self.landmarks[pip_id][2] - extended_offset:
+                    return False
+            for tip_id, pip_id in zip(args["folded_tip_ids"], args["folded_pip_ids"]):
+                if self.landmarks[tip_id][2] <= self.landmarks[pip_id][2] + folded_offset:
+                    return False
+            return True
+
+        if check_type == "landmark_distance":
+            args = gesture["args"]
+            ids = args["landmark_ids"]
+            if len(self.landmarks) < 21 or len(ids) < 2:
+                return False
+            threshold = args.get("distance_threshold", 40)
+            return self._distance(ids[0], ids[1]) < threshold
+
+        if check_type == "group_landmark_distance":
+            args = gesture["args"]
+            ids = args["landmark_ids"]
+            if len(self.landmarks) < 21 or len(ids) < 2:
+                return False
+            threshold = args.get("distance_threshold", 40)
+            anchor = ids[0]
+            return all(self._distance(anchor, ids[i]) < threshold for i in range(1, len(ids)))
+
         return False
 
     def _distance(self, tip1_id: int, tip2_id: int) -> float:

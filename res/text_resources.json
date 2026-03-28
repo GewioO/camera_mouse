@@ -63,6 +63,32 @@
         "spinner": {
             "uk": "⏳ Запуск камери",
             "en": "⏳ Starting camera"
+        },
+        "add_profile_btn": {
+            "uk": "+ Додати профіль",
+            "en": "+ Add Profile"
+        },
+        "delete_profile_btn": {
+            "uk": "− Видалити профіль",
+            "en": "− Delete Profile"
         }
+    },
+    "profile_builder": {
+        "builder_title":    {"uk": "Конструктор профілів",         "en": "Profile Builder"},
+        "palm_section":     {"uk": "Жест руки:",                   "en": "Hand gesture:"},
+        "special_section":  {"uk": "Спец. жести:",                 "en": "Special gestures:"},
+        "gesture_label":    {"uk": "Жест:",                        "en": "Gesture:"},
+        "action_label":     {"uk": "Дія:",                         "en": "Action:"},
+        "add_btn":          {"uk": "+ Додати",                     "en": "+ Add"},
+        "bindings_title":   {"uk": "Прив'язки:",                   "en": "Bindings:"},
+        "mouse_move_check": {"uk": "Рух миші за рукою",            "en": "Mouse follows hand"},
+        "name_label":       {"uk": "Ім'я профілю:",                "en": "Profile name:"},
+        "save_btn":         {"uk": "Зберегти",                     "en": "Save"},
+        "back_btn":         {"uk": "Назад",                        "en": "Back"},
+        "no_gesture":       {"uk": "Оберіть жест",                 "en": "Select gesture"},
+        "error_title":      {"uk": "Помилка",                      "en": "Error"},
+        "error_name_empty": {"uk": "Введіть ім'я профілю",         "en": "Enter profile name"},
+        "error_name_exists":{"uk": "Профіль з такою назвою вже існує", "en": "Profile already exists"},
+        "error_no_bindings":{"uk": "Додайте хоча б одну прив'язку або увімкніть рух миші", "en": "Add at least one binding or enable mouse move"}
     }
 }
