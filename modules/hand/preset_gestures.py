@@ -1,6 +1,6 @@
 import numpy as np
-from json_manager import JsonManager
-from constants import FINGER_TIPS
+from core.json_manager import JsonManager
+from core.constants import FINGER_TIPS
 
 class PresetGestures:
     def __init__(

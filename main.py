@@ -3,15 +3,15 @@ import time
 import threading
 import cv2
 import queue
-from json_manager import JsonManager
+from core.json_manager import JsonManager
 from cli_manager import CLIManager
 from ui.ui_manager import UIManager
-from hand_tracker import HandTracker
-from mouse_controller import MouseController
-from preset_gestures import PresetGestures
-from scale_controller import ScaleController
-from camera_manager import open_camera, enumerate_cameras
-from constants import (
+from modules.hand.hand_tracker import HandTracker
+from core.mouse_controller import MouseController
+from modules.hand.preset_gestures import PresetGestures
+from core.scale_controller import ScaleController
+from core.camera_manager import open_camera, enumerate_cameras
+from core.constants import (
     FRAME_WIDTH, FRAME_HEIGHT,
     DEFAULT_SCALE, DEFAULT_CAMERA_ID,
     MOUSE_SMOOTHING,

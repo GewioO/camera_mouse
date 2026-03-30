@@ -6,11 +6,11 @@ from tkinter import ttk
 from typing import Dict, Any
 import sv_ttk
 
-from json_manager import JsonManager
+from core.json_manager import JsonManager
 from cli_manager import CLIManager
-from scale_controller import ScaleController
-from camera_manager import enumerate_cameras, get_camera_name
-from constants import SCALE_STEP, DEFAULT_CAMERA_ID
+from core.scale_controller import ScaleController
+from core.camera_manager import enumerate_cameras, get_camera_name
+from core.constants import SCALE_STEP, DEFAULT_CAMERA_ID
 
 from .ui_elements import (
     COLORS, FONTS, SPINNER_CHARS, TEAL, TEAL_HOVER, DANGER, DANGER_HOVER,

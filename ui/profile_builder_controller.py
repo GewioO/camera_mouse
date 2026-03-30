@@ -1,6 +1,6 @@
-from json_manager import JsonManager
-from ui.ui_elements import ACTION_ICONS
-from constants import FINGER_TIPS   # {"thumb":4, "index":8, "middle":12, "ring":16, "pinky":20}
+from core.json_manager import JsonManager
+from .ui_elements import ACTION_ICONS
+from core.constants import FINGER_TIPS   # {"thumb":4, "index":8, "middle":12, "ring":16, "pinky":20}
 
 _CUSTOM_CHECKS = ("landmark_distance", "group_landmark_distance")
 

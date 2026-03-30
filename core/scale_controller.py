@@ -1,5 +1,5 @@
 import threading
-from constants import SCALE_MIN, SCALE_MAX, DEFAULT_SCALE
+from core.constants import SCALE_MIN, SCALE_MAX, DEFAULT_SCALE
 
 
 class ScaleController:

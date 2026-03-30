@@ -1,7 +1,7 @@
 import autopy
 from pynput.mouse import Controller
 import numpy as np
-from constants import DEAD_ZONE_MARGIN
+from core.constants import DEAD_ZONE_MARGIN
 
 class MouseController:
     def __init__(self, frame_width, frame_height, smoothing=7):

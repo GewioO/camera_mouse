@@ -1,5 +1,5 @@
 import argparse
-from json_manager import JsonManager
+from core.json_manager import JsonManager
 
 
 class CLIManager:

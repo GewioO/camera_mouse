@@ -1,7 +1,7 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-from constants import FINGER_TIPS
+from core.constants import FINGER_TIPS
 
 class HandTracker:
     def __init__(self, max_hands=1, detection_confidence=0.7, tracking_confidence=0.7):
