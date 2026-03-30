@@ -286,8 +286,10 @@ class UIManager:
             return
 
         profiles = self.json_manager.load_profiles()
+        deleted_gesture_names = set(profiles[mode].values())
         profiles.pop(mode, None)
         self.json_manager.save_json("profile_config.json", profiles)
+        self._cleanup_orphaned_gestures(deleted_gesture_names, profiles)
 
         self.cli_manager.profiles = profiles
 
@@ -301,6 +303,19 @@ class UIManager:
             self.profile_combo["values"] = new_names
 
         self._on_profile_change(new_mode)
+
+    def _cleanup_orphaned_gestures(self, deleted_names: set, remaining_profiles: dict) -> None:
+        in_use = {g for p in remaining_profiles.values() for g in p.values()}
+        orphaned = deleted_names - in_use
+        if not orphaned:
+            return
+        custom_checks = {"landmark_distance", "group_landmark_distance"}
+        gestures = self.json_manager.load_gestures()
+        kept = [g for g in gestures
+                if g["name"] not in orphaned or g.get("check") not in custom_checks]
+        if len(kept) != len(gestures):
+            self.json_manager.save_json("gestures.json", kept)
+            self.gestures_data = kept
 
     def _open_profile_builder(self):
         controller = ProfileBuilderController(self.json_manager, self.lang)
