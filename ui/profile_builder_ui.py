@@ -400,7 +400,7 @@ class ProfileBuilderWindow:
             messagebox.showerror(err_title, self._t("error_name_empty"), parent=self.win)
             return
 
-        if name in self.controller.json_manager.load_profiles():
+        if name in self.controller.json_manager.load_profiles(self.controller.module):
             messagebox.showerror(err_title, self._t("error_name_exists"), parent=self.win)
             return
 

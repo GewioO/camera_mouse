@@ -1,17 +1,22 @@
 {
-    "default": {
-        "mouse_move": "dummy",
-        "scroll_up": "fist_index_up",
-        "scroll_down": "thumb_middle_ring"
+    "hand": {
+        "default": {
+            "mouse_move": "dummy",
+            "scroll_up": "fist_index_up",
+            "scroll_down": "thumb_middle_ring"
+        },
+        "touch": {
+            "mouse_move": "dummy",
+            "click": "thumb_index",
+            "double_click": "thumb_middle",
+            "drag": "thumb_ring"
+        },
+        "scroll": {
+            "scroll_up": "fist_index_up",
+            "scroll_down": "thumb_middle_ring"
+        }
     },
-    "touch": {
-        "mouse_move": "dummy",
-        "click": "thumb_index",
-        "double_click": "thumb_middle",
-        "drag": "thumb_ring"
-    },
-    "scroll": {
-        "scroll_up": "fist_index_up",
-        "scroll_down": "thumb_middle_ring"
+    "stump": {
+        "default": {}
     }
 }

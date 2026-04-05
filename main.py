@@ -4,9 +4,12 @@ import threading
 import cv2
 import queue
 from core.json_manager import JsonManager
+from core.module_manager import ModuleManager
 from cli_manager import CLIManager
 from ui.ui_manager import UIManager
 from modules.hand.hand_tracker import HandTracker
+from modules.stump.tracker import StumpTracker
+from modules.stump.flick_detector import FlickDetector
 from core.mouse_controller import MouseController
 from modules.hand.preset_gestures import PresetGestures
 from core.scale_controller import ScaleController
@@ -83,7 +86,7 @@ class DisplayOverlay:
                 self.ui_commands.remove(cmd)
 
 def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None,
-               display_queue=None):
+               display_queue=None, active_module="hand", stump_side="right"):
     if scale_controller is None:
         scale_controller = ScaleController(cli.main_config.get("scale", DEFAULT_SCALE))
 
@@ -104,16 +107,35 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     if on_ready_callback:
         on_ready_callback()
 
-    tracker = HandTracker(max_hands=1)
+    print("=== Module:", active_module, "| Mode:", cli.mode, "===")
+
+    try:
+        if active_module == "stump":
+            tracker = StumpTracker(side=stump_side)
+            _run_stump_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
+                            display_queue, stop_flag)
+        else:
+            tracker = HandTracker(max_hands=1)
+            _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
+                           display_overlay, display_queue, stop_flag)
+    finally:
+        cli.main_config["scale"] = scale_controller.get()
+        cli.persist_state()
+        video_thread.stop()
+        if display_queue is None:
+            cv2.destroyAllWindows()
+        time.sleep(0.5)
+        print("Camera stopped")
+
+
+def _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
+                   display_overlay, display_queue, stop_flag):
     mouse = MouseController(FRAME_WIDTH, FRAME_HEIGHT, smoothing=MOUSE_SMOOTHING)
     scroll_velocity = 0
-
     profile = cli.current_profile
-    print("=== Mode:", cli.mode, "===")
 
     ONE_SHOT_ACTIONS = {"click", "double_click", "drag"}
     CONTINUOUS_ACTIONS = {"scroll_down", "scroll_up"}
-
     drag_active = False
     gesture_was_active = {}
     action_cooldown = {}
@@ -152,7 +174,6 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
 
                     if action in ONE_SHOT_ACTIONS and edge_triggered:
                         action_cooldown[action] = COOLDOWN_FRAMES
-
                         if action == "click":
                             mouse.click('left')
                             display_overlay.add_ui_command("CLICK!", (50, 50), (0, 0, 255))
@@ -182,39 +203,72 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
                 scroll_velocity *= SCROLL_DECAY
 
             display_overlay.draw(frame_with_hands)
-
-            if display_queue is not None:
-                # GUI mode: send frame to main thread for display
-                try:
-                    display_queue.put_nowait(frame_with_hands)
-                except queue.Full:
-                    pass
-            else:
-                # CLI mode: display directly (already in main thread)
-                cv2.imshow("AI Hand Mouse", frame_with_hands)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('+') or key == ord('='):
-                    scale_controller.increment(0.1)
-                elif key == ord('-'):
-                    scale_controller.increment(-0.1)
-                elif key == ord('q'):
-                    break
-
+            _push_frame(frame_with_hands, display_queue, scale_controller)
             time.sleep(0.001)
 
     except KeyboardInterrupt:
         pass
     finally:
-        cli.main_config["scale"] = scale_controller.get()
         if drag_active:
             mouse.toggle_drag(start=False)
-        cli.persist_state()
-        video_thread.stop()
         tracker.close()
-        if display_queue is None:
-            cv2.destroyAllWindows()
-        time.sleep(0.5)
-        print("Camera stopped")
+
+
+def _run_stump_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
+                    display_queue, stop_flag):
+    flick_detector = FlickDetector()
+    scroll_mode = False
+
+    try:
+        while not (stop_flag and stop_flag.is_set()):
+            try:
+                frame = raw_frame_queue.get_nowait()
+            except queue.Empty:
+                time.sleep(0.001)
+                continue
+
+            frame = tracker.find_pose(frame, draw=True)
+            h, w = frame.shape[:2]
+            landmarks = tracker.get_landmarks(w, h)
+
+            if landmarks:
+                angle = tracker.get_stump_angle()
+                if angle is not None:
+                    cv2.putText(frame, f"Angle: {angle:+.1f}", (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 2)
+                    raw_y = tracker.get_raw_wrist_y()
+                    if raw_y is not None and flick_detector.update(raw_y, angle):
+                        scroll_mode = not scroll_mode
+            else:
+                flick_detector.reset()
+
+            mode_color = (0, 200, 255) if scroll_mode else (200, 200, 255)
+            cv2.putText(frame, "SCROLL" if scroll_mode else "CURSOR", (10, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, mode_color, 2)
+
+            display_overlay.draw(frame)
+            _push_frame(frame, display_queue, scale_controller)
+            time.sleep(0.001)
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        tracker.close()
+
+
+def _push_frame(frame, display_queue, scale_controller):
+    if display_queue is not None:
+        try:
+            display_queue.put_nowait(frame)
+        except queue.Full:
+            pass
+    else:
+        cv2.imshow("AI Hand Mouse", frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('+') or key == ord('='):
+            scale_controller.increment(0.1)
+        elif key == ord('-'):
+            scale_controller.increment(-0.1)
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
@@ -254,7 +308,12 @@ def main():
         camera_thread = threading.Thread(
             target=run_camera,
             args=(ui.cli_manager, json_manager, camera_stop_flag, on_camera_ready),
-            kwargs={"scale_controller": scale_controller, "display_queue": display_queue},
+            kwargs={
+                "scale_controller": scale_controller,
+                "display_queue": display_queue,
+                "active_module": ui.module_manager.get(),
+                "stump_side": ui.cli_manager.main_config.get("stump_side", "right"),
+            },
             daemon=True,
         )
         camera_thread.start()
@@ -281,6 +340,12 @@ def main():
 
                 elif event == "profile_changed":
                     print(f"Profile changed to: {signal['data']['mode']}")
+                    if camera_running:
+                        stop_camera()
+                        cv2.destroyAllWindows()
+
+                elif event == "module_changed":
+                    print(f"Module changed to: {signal['data']['module']}")
                     if camera_running:
                         stop_camera()
                         cv2.destroyAllWindows()

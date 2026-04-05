@@ -6,9 +6,10 @@ _CUSTOM_CHECKS = ("landmark_distance", "group_landmark_distance")
 
 
 class ProfileBuilderController:
-    def __init__(self, json_manager: JsonManager, lang: str):
+    def __init__(self, json_manager: JsonManager, lang: str, module: str = "hand"):
         self.json_manager = json_manager
         self.lang = lang
+        self.module = module
         self._reload_gestures()
 
     # ── Internal ──────────────────────────────────────────────────────────────
@@ -74,10 +75,10 @@ class ProfileBuilderController:
         return [a for a in ACTION_ICONS if a != "mouse_move"]
 
     def save_profile(self, name: str, bindings: dict, mouse_move: bool) -> None:
-        """Add new profile to profile_config.json."""
-        profiles = self.json_manager.load_profiles()
+        """Add new profile to profile_config.json under the current module."""
+        profiles = self.json_manager.load_profiles(self.module)
         profile = dict(bindings)
         if mouse_move:
             profile["mouse_move"] = "dummy"
         profiles[name] = profile
-        self.json_manager.save_json("profile_config.json", profiles)
+        self.json_manager.save_profiles(self.module, profiles)

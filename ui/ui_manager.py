@@ -7,6 +7,7 @@ from typing import Dict, Any
 import sv_ttk
 
 from core.json_manager import JsonManager
+from core.module_manager import ModuleManager
 from cli_manager import CLIManager
 from core.scale_controller import ScaleController
 from core.camera_manager import enumerate_cameras, get_camera_name
@@ -18,7 +19,7 @@ from .ui_elements import (
     create_start_button, update_button_state, get_spinner_text,
     create_zoom_panel, update_zoom_display,
     create_gesture_list, create_profile_panel, create_lang_selector,
-    create_camera_selector,
+    create_camera_selector, create_module_selector, create_side_selector,
 )
 from .profile_builder_controller import ProfileBuilderController
 from .profile_builder_ui import ProfileBuilderWindow
@@ -28,6 +29,7 @@ class UIManager:
     def __init__(self, json_manager: JsonManager, scale_controller: ScaleController):
         self.json_manager = json_manager
         self.cli_manager = CLIManager(json_manager)
+        self.module_manager = ModuleManager(json_manager)
         self._scale_ctrl = scale_controller
         self.texts = json_manager.load_texts()
         self.gestures_data = json_manager.load_gestures()
@@ -51,8 +53,7 @@ class UIManager:
             f"{get_camera_name(i)} ({i})" for i in self.available_cameras
         ]
 
-        # Profiles that cannot be deleted
-        self._protected_profiles = {"default", "scroll"}
+        # (protected profiles are determined per module — see _get_protected_profiles)
 
         # Widget references
         self.camera_label = None
@@ -66,6 +67,7 @@ class UIManager:
         self.profile_combo: ttk.Combobox | None = None
         self.delete_profile_btn: tk.Button | None = None
         self.camera_selector: ttk.Combobox | None = None
+        self.side_selector_buttons: list = []
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -155,6 +157,27 @@ class UIManager:
         self.gesture_list_parent = left
         self._rebuild_gesture_list()
 
+        # Right: module selector
+        create_module_selector(
+            right, self.module_manager.get(),
+            callback=self._on_module_change,
+            texts=self.texts,
+            lang=self.lang,
+        )
+
+        if self.module_manager.get() == "stump":
+            current_side = self.cli_manager.main_config.get("stump_side", "right")
+            self.side_selector_buttons = create_side_selector(
+                right, current_side,
+                callback=self._on_side_change,
+                texts=self.texts,
+                lang=self.lang,
+            )
+        else:
+            self.side_selector_buttons = []
+
+        ttk.Separator(right, orient="horizontal").pack(fill="x", pady=(8, 8))
+
         # Right: profile selector + buttons
         profile_names = list(self.cli_manager.profiles.keys())
         self.profile_var, self.profile_combo = create_profile_panel(
@@ -163,14 +186,15 @@ class UIManager:
             texts=self.texts,
             lang=self.lang,
         )
-        tk.Button(
-            right,
-            text=self.texts['ui']['add_profile_btn'][self.lang],
-            font=FONTS["small"], bg=TEAL, fg="#0d0d0d",
-            activebackground=TEAL_HOVER, activeforeground="#0d0d0d",
-            relief="flat", padx=6, pady=2,
-            command=self._open_profile_builder,
-        ).pack(anchor="w", pady=(4, 0))
+        if self.module_manager.get() == "hand":
+            tk.Button(
+                right,
+                text=self.texts['ui']['add_profile_btn'][self.lang],
+                font=FONTS["small"], bg=TEAL, fg="#0d0d0d",
+                activebackground=TEAL_HOVER, activeforeground="#0d0d0d",
+                relief="flat", padx=6, pady=2,
+                command=self._open_profile_builder,
+            ).pack(anchor="w", pady=(4, 0))
 
         self.delete_profile_btn = tk.Button(
             right,
@@ -195,6 +219,13 @@ class UIManager:
         # Right: language selector
         create_lang_selector(right, self.lang, self._on_lang_change)
 
+    def _get_protected_profiles(self) -> set:
+        module = self.module_manager.get()
+        if module == "stump":
+            return {"default"}
+        # hand (and future modules): protect built-in profiles
+        return {"default", "scroll"}
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _rebuild_ui(self):
@@ -202,6 +233,7 @@ class UIManager:
         self.profile_combo = None
         self.delete_profile_btn = None
         self.camera_selector = None
+        self.side_selector_buttons = []
         for widget in self._root.winfo_children():
             widget.destroy()
         self._build_ui()
@@ -268,27 +300,41 @@ class UIManager:
     def _update_delete_btn(self):
         if self.delete_profile_btn is None:
             return
-        protected = self.cli_manager.mode in self._protected_profiles
+        protected = self.cli_manager.mode in self._get_protected_profiles()
         if protected:
-            self.delete_profile_btn.config(
-                state="disabled", bg="#555555", fg="#888888",
-                activebackground="#555555", activeforeground="#888888",
-            )
+            self.delete_profile_btn.pack_forget()
         else:
+            self.delete_profile_btn.pack(anchor="w", pady=(2, 0))
             self.delete_profile_btn.config(
-                state="normal", bg=DANGER, fg="#ffffff",
+                bg=DANGER, fg="#ffffff",
                 activebackground=DANGER_HOVER, activeforeground="#ffffff",
             )
 
+    def _on_side_change(self, side: str):
+        self.cli_manager.main_config["stump_side"] = side
+        self.cli_manager.persist_state()
+        self._rebuild_ui()
+        if self.camera_running:
+            self.ui_to_main.put({"event": "module_changed", "data": {"module": "stump"}})
+
+    def _on_module_change(self, module: str):
+        if module == self.module_manager.get():
+            return
+        self.module_manager.set(module, self.cli_manager.main_config)
+        self.cli_manager.switch_module(module)
+        self._rebuild_ui()
+        self.ui_to_main.put({"event": "module_changed", "data": {"module": module}})
+
     def _on_delete_profile(self):
         mode = self.cli_manager.mode
-        if mode in self._protected_profiles:
+        if mode in self._get_protected_profiles():
             return
 
-        profiles = self.json_manager.load_profiles()
+        module = self.module_manager.get()
+        profiles = self.json_manager.load_profiles(module)
         deleted_gesture_names = set(profiles[mode].values())
         profiles.pop(mode, None)
-        self.json_manager.save_json("profile_config.json", profiles)
+        self.json_manager.save_profiles(module, profiles)
         self._cleanup_orphaned_gestures(deleted_gesture_names, profiles)
 
         self.cli_manager.profiles = profiles
@@ -318,14 +364,14 @@ class UIManager:
             self.gestures_data = kept
 
     def _open_profile_builder(self):
-        controller = ProfileBuilderController(self.json_manager, self.lang)
+        controller = ProfileBuilderController(self.json_manager, self.lang, module=self.module_manager.get())
         ProfileBuilderWindow(
             self._root, controller, self.lang, self.texts,
             on_save_callback=self._on_new_profile_saved,
         )
 
     def _on_new_profile_saved(self, name: str):
-        self.cli_manager.profiles = self.json_manager.load_profiles()
+        self.cli_manager.profiles = self.json_manager.load_profiles(self.module_manager.get())
         new_names = list(self.cli_manager.profiles.keys())
         if self.profile_var:
             self.profile_var.set(name)
@@ -376,3 +422,5 @@ class UIManager:
         self.loading_label.config(text="")
         if self.camera_selector:
             self.camera_selector['state'] = "disabled" if self.camera_running else "readonly"
+        for btn in self.side_selector_buttons:
+            btn['state'] = "disabled" if self.camera_running else "normal"

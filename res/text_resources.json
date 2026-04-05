@@ -71,6 +71,23 @@
         "delete_profile_btn": {
             "uk": "− Видалити профіль",
             "en": "− Delete Profile"
+        },
+        "module_label": {
+            "uk": "Модуль введення",
+            "en": "Input module"
+        },
+        "modules": {
+            "hand":  {"uk": "Рука",   "en": "Hand"},
+            "stump": {"uk": "Культя", "en": "Stump"},
+            "eyes":  {"uk": "Очі",    "en": "Eyes"}
+        },
+        "stump_side_label": {
+            "uk": "Рука",
+            "en": "Arm"
+        },
+        "stump_sides": {
+            "right": {"uk": "Права", "en": "Right"},
+            "left":  {"uk": "Ліва",  "en": "Left"}
         }
     },
     "profile_builder": {

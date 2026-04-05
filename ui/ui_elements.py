@@ -264,6 +264,72 @@ def create_lang_selector(parent: tk.Misc, current_lang: str, callback) -> None:
         ).pack(side="left", padx=(0, 4))
 
 
+# ── Module selector ───────────────────────────────────────────────────────────
+
+def create_module_selector(
+    parent: tk.Misc, current_module: str, callback, texts: dict, lang: str,
+) -> None:
+    ttk.Label(parent, text=texts['ui']['module_label'][lang],
+               font=FONTS["status_bold"]).pack(anchor="w", pady=(0, 4))
+
+    row = ttk.Frame(parent)
+    row.pack(anchor="w")
+
+    active_modules = ["hand", "stump"]
+    for module in active_modules:
+        active = module == current_module
+        label = texts['ui']['modules'][module][lang]
+        tk.Button(
+            row, text=label, font=FONTS["small"],
+            bg=TEAL if active else BTN_DARK,
+            fg="#0d0d0d" if active else "#cccccc",
+            activebackground=TEAL_HOVER if active else "#555555",
+            activeforeground="#0d0d0d",
+            relief="flat", borderwidth=0,
+            padx=8, pady=3,
+            command=lambda m=module: callback(m),
+        ).pack(side="left", padx=(0, 4))
+
+    # Eyes — placeholder, not yet implemented
+    tk.Button(
+        row, text=texts['ui']['modules']['eyes'][lang], font=FONTS["small"],
+        bg=BTN_DARK, fg="#555555",
+        relief="flat", borderwidth=0,
+        padx=8, pady=3,
+        state="disabled",
+    ).pack(side="left")
+
+
+# ── Stump side selector ───────────────────────────────────────────────────────
+
+def create_side_selector(
+    parent: tk.Misc, current_side: str, callback, texts: dict, lang: str,
+) -> list:
+    ttk.Label(parent, text=texts['ui']['stump_side_label'][lang],
+               font=FONTS["status_bold"]).pack(anchor="w", pady=(8, 4))
+
+    row = ttk.Frame(parent)
+    row.pack(anchor="w")
+
+    buttons = []
+    for side in ("left", "right"):  # left first — matches mirrored camera layout
+        active = side == current_side
+        label = texts['ui']['stump_sides'][side][lang]
+        btn = tk.Button(
+            row, text=label, font=FONTS["small"],
+            bg=TEAL if active else BTN_DARK,
+            fg="#0d0d0d" if active else "#cccccc",
+            activebackground=TEAL_HOVER if active else "#555555",
+            activeforeground="#0d0d0d",
+            relief="flat", borderwidth=0,
+            padx=8, pady=3,
+            command=lambda s=side: callback(s),
+        )
+        btn.pack(side="left", padx=(0, 4))
+        buttons.append(btn)
+    return buttons
+
+
 # ── Profile selector ──────────────────────────────────────────────────────────
 
 def create_profile_panel(

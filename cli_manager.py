@@ -6,12 +6,15 @@ class CLIManager:
     def __init__(self, json_manager: JsonManager | None = None):
         self.json_manager = json_manager or JsonManager()
 
-        self.profiles = self.json_manager.load_profiles()
-        
+        self.main_config = self.json_manager.load_main_config()
+        self.active_module = self.main_config.get("active_module", "hand")
+
+        self.profiles = self.json_manager.load_profiles(self.active_module)
+
         profile_names = list(self.profiles.keys())
         fixed_modes = ["help", "configuration"]
         all_modes = sorted(list(set(profile_names + fixed_modes)))
-        
+
         self.parser = argparse.ArgumentParser(add_help=False)
         self.parser.add_argument(
             "mode",
@@ -29,16 +32,19 @@ class CLIManager:
         self.args = self.parser.parse_args()
 
         self.texts = self.json_manager.load_texts()
-        self.main_config = self.json_manager.load_main_config()
 
         self.lang = self.args.lang or self.main_config.get("lang", "uk")
 
+        last_key = f"last_profile_{self.active_module}"
         if self.args.mode is not None:
             self.mode = self.args.mode
         else:
-            stored_mode = self.main_config.get("last_profile", "default")
+            stored_mode = self.main_config.get(last_key, "default")
             if stored_mode == "help" or stored_mode not in self.profiles:
-                stored_mode = next((name for name in self.profiles.keys() if name != "help"), "default")
+                stored_mode = next(
+                    (name for name in self.profiles.keys() if name != "help"),
+                    "default"
+                )
             self.mode = stored_mode
 
         if self.mode in self.profiles:
@@ -47,7 +53,7 @@ class CLIManager:
             self.current_profile = {}
 
         if self.mode in self.profiles:
-            self.main_config["last_profile"] = self.mode
+            self.main_config[last_key] = self.mode
         self.main_config["lang"] = self.lang
         self.json_manager.save_main_config(self.main_config)
 
@@ -71,12 +77,23 @@ class CLIManager:
     def set_profile(self, new_mode: str) -> None:
         self.mode = new_mode
         self.current_profile = self.profiles[new_mode]
-        self.main_config["last_profile"] = new_mode
+        self.main_config[f"last_profile_{self.active_module}"] = new_mode
         self.persist_state()
 
     def set_camera_id(self, camera_id: int) -> None:
         self.main_config["camera_id"] = camera_id
         self.persist_state()
+
+    def switch_module(self, module: str) -> None:
+        """Load profiles for a new module and restore its last-used profile."""
+        self.active_module = module
+        self.profiles = self.json_manager.load_profiles(module)
+        last_key = f"last_profile_{module}"
+        stored = self.main_config.get(last_key, "default")
+        if stored not in self.profiles:
+            stored = next(iter(self.profiles), "default")
+        self.mode = stored
+        self.current_profile = self.profiles.get(stored, {})
 
     @property
     def available_modes(self) -> list:
