@@ -8,7 +8,7 @@ TEAL_DARK   = "#00ACC1"
 DANGER      = "#EF5350"
 DANGER_HOVER= "#E53935"
 BG_DARK     = "#1c1c1c"
-BTN_DARK    = "#3c3c3c"   # inactive button bg on dark theme
+BTN_DARK    = "#3c3c3c"   
 
 COLORS = {
     "primary":     TEAL,
@@ -275,7 +275,7 @@ def create_module_selector(
     row = ttk.Frame(parent)
     row.pack(anchor="w")
 
-    active_modules = ["hand", "stump"]
+    active_modules = ["hand", "forearm"]
     for module in active_modules:
         active = module == current_module
         label = texts['ui']['modules'][module][lang]
@@ -300,21 +300,21 @@ def create_module_selector(
     ).pack(side="left")
 
 
-# ── Stump side selector ───────────────────────────────────────────────────────
+# ── Forearm side selector ─────────────────────────────────────────────────────
 
 def create_side_selector(
     parent: tk.Misc, current_side: str, callback, texts: dict, lang: str,
 ) -> list:
-    ttk.Label(parent, text=texts['ui']['stump_side_label'][lang],
+    ttk.Label(parent, text=texts['ui']['forearm_side_label'][lang],
                font=FONTS["status_bold"]).pack(anchor="w", pady=(8, 4))
 
     row = ttk.Frame(parent)
     row.pack(anchor="w")
 
     buttons = []
-    for side in ("left", "right"):  # left first — matches mirrored camera layout
+    for side in ("left", "right"):
         active = side == current_side
-        label = texts['ui']['stump_sides'][side][lang]
+        label = texts['ui']['forearm_sides'][side][lang]
         btn = tk.Button(
             row, text=label, font=FONTS["small"],
             bg=TEAL if active else BTN_DARK,

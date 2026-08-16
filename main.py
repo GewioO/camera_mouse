@@ -8,12 +8,13 @@ from core.module_manager import ModuleManager
 from cli_manager import CLIManager
 from ui.ui_manager import UIManager
 from modules.hand.hand_tracker import HandTracker
-from modules.stump.tracker import StumpTracker
-from modules.stump.flick_detector import FlickDetector
+from modules.forearm.tracker import ForearmTracker
+from modules.forearm.flick_detector import FlickDetector
+from modules.forearm.rotation_classifier import RotationClassifier
 from core.mouse_controller import MouseController
 from modules.hand.preset_gestures import PresetGestures
 from core.scale_controller import ScaleController
-from core.camera_manager import open_camera, enumerate_cameras
+from core.camera_manager import open_camera, enumerate_cameras, zoom_frame, rotate_frame
 from core.constants import (
     FRAME_WIDTH, FRAME_HEIGHT,
     DEFAULT_SCALE, DEFAULT_CAMERA_ID,
@@ -23,24 +24,13 @@ from core.constants import (
     QUEUE_MAXSIZE,
 )
 
-def zoom_frame(frame, scale=1.5):
-    if scale <= 1.0:
-        return frame
-    h, w = frame.shape[:2]
-    resized = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
-    new_h, new_w = resized.shape[:2]
-    center_x, center_y = new_w // 2, new_h // 2
-    start_x = center_x - w // 2
-    start_y = center_y - h // 2
-    return resized[start_y:start_y + h, start_x:start_x + w]
-
-
 class VideoThread:
-    def __init__(self, scale_controller, camera_id: int = DEFAULT_CAMERA_ID):
+    def __init__(self, scale_controller, camera_id: int = DEFAULT_CAMERA_ID, rotation: int = 0):
         self.cap = open_camera(camera_id)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
         self.scale_controller = scale_controller
+        self.rotation = rotation
         self.running = True
 
     def run(self, frame_queue):
@@ -50,6 +40,7 @@ class VideoThread:
                 time.sleep(0.01)
                 continue
 
+            frame = rotate_frame(frame, self.rotation)
             frame = cv2.flip(frame, 1)
 
             current_scale = self.scale_controller.get()
@@ -86,7 +77,7 @@ class DisplayOverlay:
                 self.ui_commands.remove(cmd)
 
 def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None,
-               display_queue=None, active_module="hand", stump_side="right"):
+               display_queue=None, active_module="hand", forearm_side="right"):
     if scale_controller is None:
         scale_controller = ScaleController(cli.main_config.get("scale", DEFAULT_SCALE))
 
@@ -98,7 +89,8 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
         camera_id = available[0]
         cli.main_config["camera_id"] = camera_id
         print(f"Saved camera_id not available, falling back to camera {camera_id}")
-    video_thread = VideoThread(scale_controller, camera_id=camera_id)
+    camera_rotation = cli.main_config.get("camera_rotation", 0)
+    video_thread = VideoThread(scale_controller, camera_id=camera_id, rotation=camera_rotation)
     video_t = threading.Thread(target=video_thread.run, args=(raw_frame_queue,), daemon=True)
     video_t.start()
 
@@ -110,10 +102,11 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     print("=== Module:", active_module, "| Mode:", cli.mode, "===")
 
     try:
-        if active_module == "stump":
-            tracker = StumpTracker(side=stump_side)
-            _run_stump_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
-                            display_queue, stop_flag)
+        if active_module == "forearm":
+            tracker = ForearmTracker(side=forearm_side)
+            ml_classifier = RotationClassifier(side=forearm_side)
+            _run_forearm_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
+                            display_queue, stop_flag, ml_classifier)
         else:
             tracker = HandTracker(max_hands=1)
             _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
@@ -214,10 +207,27 @@ def _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller
         tracker.close()
 
 
-def _run_stump_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
-                    display_queue, stop_flag):
-    flick_detector = FlickDetector()
-    scroll_mode = False
+def _run_forearm_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
+                    display_queue, stop_flag, ml_classifier=None):
+    # Rule-based skin-pixel asymmetry — display-only diagnostic now (superseded
+    # by the trained ML classifier below as the driver of rot_state, since it
+    # measures palmar/dorsal skin far less reliably than the learned features).
+    # asym = (top_skin - bot_skin) / total_skin  ∈ [-1, +1]
+    _ASYM_THRESH = 0.12   # imbalance ratio to trigger a rule-state change
+    _HYST        = 0.04   # hysteresis to avoid flicker
+    _ASYM_SMOOTH = 0.55   # EMA factor for the raw asymmetry signal
+
+    # Consecutive identical ML predictions required before committing them to
+    # rot_state — model.predict() has no temporal smoothing of its own, so a
+    # single-frame flip would otherwise flicker the state every frame.
+    _ML_CONFIRM_FRAMES = 5
+
+    asym_smooth  = None
+    rule_state   = "neutral"
+    rot_state    = "neutral"
+    ml_pending   = None
+    ml_pending_n = 0
+    log_frame    = 0
 
     try:
         while not (stop_flag and stop_flag.is_set()):
@@ -227,26 +237,81 @@ def _run_stump_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
                 time.sleep(0.001)
                 continue
 
+            orig = frame.copy() 
             frame = tracker.find_pose(frame, draw=True)
-            h, w = frame.shape[:2]
-            landmarks = tracker.get_landmarks(w, h)
+            landmarks = tracker.get_landmarks()
+            asym_raw = tracker.get_forearm_asymmetry(orig)
 
             if landmarks:
-                angle = tracker.get_stump_angle()
-                if angle is not None:
-                    cv2.putText(frame, f"Angle: {angle:+.1f}", (10, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 100), 2)
-                    raw_y = tracker.get_raw_wrist_y()
-                    if raw_y is not None and flick_detector.update(raw_y, angle):
-                        scroll_mode = not scroll_mode
+                # ── Rule-based asymmetry — diagnostic only, doesn't drive state ──
+                asym = None
+                if asym_raw is not None:
+                    asym_smooth = asym_raw if asym_smooth is None else (
+                        asym_smooth * _ASYM_SMOOTH + asym_raw * (1 - _ASYM_SMOOTH))
+                    asym = asym_smooth
+
+                    new_rule_state = rule_state
+                    if asym < -(_ASYM_THRESH + _HYST):
+                        new_rule_state = "outer"
+                    elif asym > (_ASYM_THRESH + _HYST):
+                        new_rule_state = "inner"
+                    elif abs(asym) < _ASYM_THRESH - _HYST:
+                        new_rule_state = "neutral"
+                    rule_state = new_rule_state
+
+                    tracker.draw_forearm_roi(frame, asym)
+                    cv2.putText(frame, f"asym: {asym:+.4f}", (10, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 100), 2)
+                    cv2.putText(frame, f"raw:  {asym_raw:+.4f}", (10, 65),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1)
+
+                cv2.putText(frame, f"rule: {rule_state}", (10, 160),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
+
+                # ── ML classifier — drives rot_state when the model is available ──
+                ml_state = None
+                if ml_classifier is not None and ml_classifier.available:
+                    ml_state = ml_classifier.predict(orig, landmarks)
+                    if ml_state == ml_pending:
+                        ml_pending_n += 1
+                    else:
+                        ml_pending, ml_pending_n = ml_state, 1
+
+                new_state = rot_state
+                if ml_classifier is not None and ml_classifier.available:
+                    if ml_state and ml_pending_n >= _ML_CONFIRM_FRAMES:
+                        new_state = ml_state
+                else:
+                    new_state = rule_state   # no trained model — fall back to the rule
+
+                if new_state != rot_state:
+                    print(f"[ROT] {rot_state} -> {new_state}  ml={ml_state}  rule={rule_state}")
+                    rot_state = new_state
+
+                log_frame += 1
+                if log_frame % 15 == 0:
+                    print(f"[ROT] state={rot_state:<7}  ml={ml_state}  rule={rule_state}")
+
+                # ── Draw main state label ────────────────────────────────────
+                state_labels = {
+                    "neutral": ("NEUTRAL",  (160, 160, 160)),
+                    "outer":   ("OUTER >>", (0,   220, 255)),
+                    "inner":   ("<< INNER", (255, 200, 0)),
+                }
+                label, color = state_labels[rot_state]
+                cv2.putText(frame, label, (10, 130),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
+
             else:
-                flick_detector.reset()
+                # Tracking lost entirely — reset both state machines
+                if landmarks is None:
+                    asym_smooth = None
+                    rule_state  = "neutral"
+                    rot_state   = "neutral"
+                    ml_pending, ml_pending_n = None, 0
+                cv2.putText(frame, "NO TRACKING", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-            mode_color = (0, 200, 255) if scroll_mode else (200, 200, 255)
-            cv2.putText(frame, "SCROLL" if scroll_mode else "CURSOR", (10, 90),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, mode_color, 2)
-
-            display_overlay.draw(frame)
             _push_frame(frame, display_queue, scale_controller)
             time.sleep(0.001)
 
@@ -312,7 +377,7 @@ def main():
                 "scale_controller": scale_controller,
                 "display_queue": display_queue,
                 "active_module": ui.module_manager.get(),
-                "stump_side": ui.cli_manager.main_config.get("stump_side", "right"),
+                "forearm_side": ui.cli_manager.main_config.get("forearm_side", "right"),
             },
             daemon=True,
         )

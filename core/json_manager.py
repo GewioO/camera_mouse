@@ -26,18 +26,24 @@ class JsonManager:
     def load_profiles(self, module: str | None = None) -> Dict[str, Dict[str, str]]:
         data = self.load_json("profile_config.json", default={})
 
-        # Migration: old flat format {"default": {...}} → per-module {"hand": {...}}
         needs_save = False
-        if data and not any(k in data for k in ("hand", "stump", "eyes")):
+        # Migration: module rename stump → forearm
+        if "stump" in data and "forearm" not in data:
+            data["forearm"] = data.pop("stump")
+            needs_save = True
+        elif "stump" in data:
+            data.pop("stump")
+            needs_save = True
+
+        if data and not any(k in data for k in ("hand", "forearm", "eyes")):
             data = {"hand": data}
             needs_save = True
 
-        # Ensure stump always has non-deletable "default" profile
-        if "stump" not in data:
-            data["stump"] = {"default": {}}
+        if "forearm" not in data:
+            data["forearm"] = {"default": {}}
             needs_save = True
-        elif "default" not in data["stump"]:
-            data["stump"]["default"] = {}
+        elif "default" not in data["forearm"]:
+            data["forearm"]["default"] = {}
             needs_save = True
 
         if needs_save:
@@ -49,8 +55,9 @@ class JsonManager:
 
     def save_profiles(self, module: str, profiles: Dict[str, Dict[str, str]]) -> None:
         data = self.load_json("profile_config.json", default={})
-        # Migrate if needed
-        if data and not any(k in data for k in ("hand", "stump", "eyes")):
+        if "stump" in data and "forearm" not in data:
+            data["forearm"] = data.pop("stump")
+        if data and not any(k in data for k in ("hand", "forearm", "eyes")):
             data = {"hand": data}
         data[module] = profiles
         self.save_json("profile_config.json", data)
@@ -64,12 +71,12 @@ class JsonManager:
     def load_main_config(self) -> Dict[str, Any]:
         default_config = {
             "last_profile_hand": "default",
-            "last_profile_stump": "default",
+            "last_profile_forearm": "default",
             "lang": "uk",
             "scale": 1.5,
             "camera_id": 0,
             "active_module": "hand",
-            "stump_side": "right",
+            "forearm_side": "right",
         }
         config = self.load_json("main_config.json", default=None)
         if config is None:
@@ -79,6 +86,17 @@ class JsonManager:
             config["last_profile_hand"] = config.pop("last_profile")
         elif "last_profile" in config:
             config.pop("last_profile")
+        # Migration: module rename stump → forearm
+        if "last_profile_stump" in config and "last_profile_forearm" not in config:
+            config["last_profile_forearm"] = config.pop("last_profile_stump")
+        else:
+            config.pop("last_profile_stump", None)
+        if "stump_side" in config and "forearm_side" not in config:
+            config["forearm_side"] = config.pop("stump_side")
+        else:
+            config.pop("stump_side", None)
+        if config.get("active_module") == "stump":
+            config["active_module"] = "forearm"
         for key, value in default_config.items():
             config.setdefault(key, value)
         return config

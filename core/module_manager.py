@@ -1,4 +1,4 @@
-MODULES = ["hand", "stump"]  # "eyes" in future
+MODULES = ["hand", "forearm"]  # "eyes" in future
 
 
 class ModuleManager:

@@ -77,15 +77,15 @@
             "en": "Input module"
         },
         "modules": {
-            "hand":  {"uk": "Рука",   "en": "Hand"},
-            "stump": {"uk": "Культя", "en": "Stump"},
-            "eyes":  {"uk": "Очі",    "en": "Eyes"}
+            "hand":    {"uk": "Рука",       "en": "Hand"},
+            "forearm": {"uk": "Передпліччя", "en": "Forearm"},
+            "eyes":    {"uk": "Очі",        "en": "Eyes"}
         },
-        "stump_side_label": {
+        "forearm_side_label": {
             "uk": "Рука",
             "en": "Arm"
         },
-        "stump_sides": {
+        "forearm_sides": {
             "right": {"uk": "Права", "en": "Right"},
             "left":  {"uk": "Ліва",  "en": "Left"}
         }

@@ -1,6 +1,6 @@
 {
     "last_profile_hand": "default",
-    "last_profile_stump": "default",
+    "last_profile_forearm": "default",
     "lang": "uk",
     "scale": 1.0,
     "window_position": [
@@ -8,7 +8,8 @@
         100
     ],
     "gesture_sensitivity": 40,
-    "camera_id": 0,
-    "active_module": "hand",
-    "stump_side": "right"
+    "camera_id": 3,
+    "camera_rotation": 0,
+    "active_module": "forearm",
+    "forearm_side": "right"
 }

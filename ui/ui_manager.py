@@ -165,8 +165,8 @@ class UIManager:
             lang=self.lang,
         )
 
-        if self.module_manager.get() == "stump":
-            current_side = self.cli_manager.main_config.get("stump_side", "right")
+        if self.module_manager.get() == "forearm":
+            current_side = self.cli_manager.main_config.get("forearm_side", "right")
             self.side_selector_buttons = create_side_selector(
                 right, current_side,
                 callback=self._on_side_change,
@@ -221,7 +221,7 @@ class UIManager:
 
     def _get_protected_profiles(self) -> set:
         module = self.module_manager.get()
-        if module == "stump":
+        if module == "forearm":
             return {"default"}
         # hand (and future modules): protect built-in profiles
         return {"default", "scroll"}
@@ -311,11 +311,11 @@ class UIManager:
             )
 
     def _on_side_change(self, side: str):
-        self.cli_manager.main_config["stump_side"] = side
+        self.cli_manager.main_config["forearm_side"] = side
         self.cli_manager.persist_state()
         self._rebuild_ui()
         if self.camera_running:
-            self.ui_to_main.put({"event": "module_changed", "data": {"module": "stump"}})
+            self.ui_to_main.put({"event": "module_changed", "data": {"module": "forearm"}})
 
     def _on_module_change(self, module: str):
         if module == self.module_manager.get():
