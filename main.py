@@ -9,8 +9,6 @@ from cli_manager import CLIManager
 from ui.ui_manager import UIManager
 from modules.hand.hand_tracker import HandTracker
 from modules.forearm.tracker import ForearmTracker
-from modules.forearm.flick_detector import FlickDetector
-from modules.forearm.rotation_classifier import RotationClassifier
 from core.mouse_controller import MouseController
 from modules.hand.preset_gestures import PresetGestures
 from core.scale_controller import ScaleController
@@ -104,9 +102,8 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     try:
         if active_module == "forearm":
             tracker = ForearmTracker(side=forearm_side)
-            ml_classifier = RotationClassifier(side=forearm_side)
-            _run_forearm_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
-                            display_queue, stop_flag, ml_classifier)
+            _run_forearm_loop(tracker, raw_frame_queue, scale_controller,
+                            display_queue, stop_flag)
         else:
             tracker = HandTracker(max_hands=1)
             _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
@@ -207,28 +204,8 @@ def _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller
         tracker.close()
 
 
-def _run_forearm_loop(tracker, raw_frame_queue, scale_controller, display_overlay,
-                    display_queue, stop_flag, ml_classifier=None):
-    # Rule-based skin-pixel asymmetry — display-only diagnostic now (superseded
-    # by the trained ML classifier below as the driver of rot_state, since it
-    # measures palmar/dorsal skin far less reliably than the learned features).
-    # asym = (top_skin - bot_skin) / total_skin  ∈ [-1, +1]
-    _ASYM_THRESH = 0.12   # imbalance ratio to trigger a rule-state change
-    _HYST        = 0.04   # hysteresis to avoid flicker
-    _ASYM_SMOOTH = 0.55   # EMA factor for the raw asymmetry signal
-
-    # Consecutive identical ML predictions required before committing them to
-    # rot_state — model.predict() has no temporal smoothing of its own, so a
-    # single-frame flip would otherwise flicker the state every frame.
-    _ML_CONFIRM_FRAMES = 5
-
-    asym_smooth  = None
-    rule_state   = "neutral"
-    rot_state    = "neutral"
-    ml_pending   = None
-    ml_pending_n = 0
-    log_frame    = 0
-
+def _run_forearm_loop(tracker, raw_frame_queue, scale_controller,
+                    display_queue, stop_flag):
     try:
         while not (stop_flag and stop_flag.is_set()):
             try:
@@ -237,78 +214,15 @@ def _run_forearm_loop(tracker, raw_frame_queue, scale_controller, display_overla
                 time.sleep(0.001)
                 continue
 
-            orig = frame.copy() 
             frame = tracker.find_pose(frame, draw=True)
             landmarks = tracker.get_landmarks()
-            asym_raw = tracker.get_forearm_asymmetry(orig)
 
             if landmarks:
-                # ── Rule-based asymmetry — diagnostic only, doesn't drive state ──
-                asym = None
-                if asym_raw is not None:
-                    asym_smooth = asym_raw if asym_smooth is None else (
-                        asym_smooth * _ASYM_SMOOTH + asym_raw * (1 - _ASYM_SMOOTH))
-                    asym = asym_smooth
-
-                    new_rule_state = rule_state
-                    if asym < -(_ASYM_THRESH + _HYST):
-                        new_rule_state = "outer"
-                    elif asym > (_ASYM_THRESH + _HYST):
-                        new_rule_state = "inner"
-                    elif abs(asym) < _ASYM_THRESH - _HYST:
-                        new_rule_state = "neutral"
-                    rule_state = new_rule_state
-
-                    tracker.draw_forearm_roi(frame, asym)
-                    cv2.putText(frame, f"asym: {asym:+.4f}", (10, 40),
+                angle = tracker.get_forearm_angle()
+                if angle is not None:
+                    cv2.putText(frame, f"angle: {angle:+.1f}", (10, 40),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 100), 2)
-                    cv2.putText(frame, f"raw:  {asym_raw:+.4f}", (10, 65),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1)
-
-                cv2.putText(frame, f"rule: {rule_state}", (10, 160),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
-
-                # ── ML classifier — drives rot_state when the model is available ──
-                ml_state = None
-                if ml_classifier is not None and ml_classifier.available:
-                    ml_state = ml_classifier.predict(orig, landmarks)
-                    if ml_state == ml_pending:
-                        ml_pending_n += 1
-                    else:
-                        ml_pending, ml_pending_n = ml_state, 1
-
-                new_state = rot_state
-                if ml_classifier is not None and ml_classifier.available:
-                    if ml_state and ml_pending_n >= _ML_CONFIRM_FRAMES:
-                        new_state = ml_state
-                else:
-                    new_state = rule_state   # no trained model — fall back to the rule
-
-                if new_state != rot_state:
-                    print(f"[ROT] {rot_state} -> {new_state}  ml={ml_state}  rule={rule_state}")
-                    rot_state = new_state
-
-                log_frame += 1
-                if log_frame % 15 == 0:
-                    print(f"[ROT] state={rot_state:<7}  ml={ml_state}  rule={rule_state}")
-
-                # ── Draw main state label ────────────────────────────────────
-                state_labels = {
-                    "neutral": ("NEUTRAL",  (160, 160, 160)),
-                    "outer":   ("OUTER >>", (0,   220, 255)),
-                    "inner":   ("<< INNER", (255, 200, 0)),
-                }
-                label, color = state_labels[rot_state]
-                cv2.putText(frame, label, (10, 130),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
-
             else:
-                # Tracking lost entirely — reset both state machines
-                if landmarks is None:
-                    asym_smooth = None
-                    rule_state  = "neutral"
-                    rot_state   = "neutral"
-                    ml_pending, ml_pending_n = None, 0
                 cv2.putText(frame, "NO TRACKING", (10, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 

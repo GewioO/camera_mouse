@@ -1,7 +1,6 @@
 import math
 import cv2
 import mediapipe as mp
-import numpy as np
 
 # MediaPipe Pose landmark indices.
 # The frame is already flipped horizontally in VideoThread (mirror effect),
@@ -26,15 +25,6 @@ _REQUIRED = ("elbow",)
 # elbow->wrist vector for later fallback (see `_resolve_wrist`).
 _CALIB_MIN_VISIBILITY = 0.65
 _SMOOTH         = 0.6   # EMA factor: higher = smoother but slower response
-
-# Forearm ROI asymmetry detection
-_SKIN_LOWER1      = np.array([0,   20,  60], dtype=np.uint8)
-_SKIN_UPPER1      = np.array([20,  150, 255], dtype=np.uint8)
-_SKIN_LOWER2      = np.array([170, 20,  60], dtype=np.uint8)
-_SKIN_UPPER2      = np.array([180, 150, 255], dtype=np.uint8)
-_ROI_HALF_W_RATIO = 0.35   # perpendicular half-width as fraction of forearm length
-_ROI_MARGIN       = 0.06   # skip this fraction from each end of the forearm
-_MIN_SKIN_PIXELS  = 40     # below this total, result is unreliable
 
 _COLOR_SHOULDER   = (200, 200, 255)
 _COLOR_ELBOW      = (0, 200, 255)
@@ -109,10 +99,6 @@ class ForearmTracker:
         self._raw_mp_landmarks = None   # unfiltered MediaPipe output, for calibrate()
         self._last_shape = None
 
-        # World (3D) landmarks — wrist and elbow z only
-        self._world_raw_z:    dict | None = None   # raw, for velocity
-        self._world_smooth_z: dict | None = None   # EMA smoothed, for rotation state
-
     def find_pose(self, frame, draw: bool = True):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self._pose.process(rgb)
@@ -133,23 +119,6 @@ class ForearmTracker:
                 self._smoothed = None
 
         self._landmarks = self._smoothed
-
-        # World Z — separate from the 2D pipeline
-        if results.pose_world_landmarks:
-            wl = results.pose_world_landmarks.landmark
-            wz = wl[self._ids["wrist"]].z
-            ez = wl[self._ids["elbow"]].z
-            self._world_raw_z = {"wrist": wz, "elbow": ez}
-            if self._world_smooth_z is None:
-                self._world_smooth_z = {"wrist": wz, "elbow": ez}
-            else:
-                self._world_smooth_z = {
-                    "wrist": self._world_smooth_z["wrist"] * _SMOOTH + wz * (1 - _SMOOTH),
-                    "elbow": self._world_smooth_z["elbow"] * _SMOOTH + ez * (1 - _SMOOTH),
-                }
-        else:
-            self._world_raw_z    = None
-            self._world_smooth_z = None
 
         if draw and self._landmarks:
             self._draw_arm(frame)
@@ -176,125 +145,6 @@ class ForearmTracker:
     def get_raw_wrist_y(self) -> int | None:
         """Raw (unsmoothed) wrist Y — used for velocity-based gesture detection."""
         return self._raw["wrist"]["y"] if self._raw else None
-
-    def get_wrist_world_z(self) -> float | None:
-        """Raw (unsmoothed) world Z of wrist — use for forward-thrust velocity."""
-        return self._world_raw_z["wrist"] if self._world_raw_z else None
-
-    def get_rotation_z(self) -> float | None:
-        """Smoothed (wrist.z − elbow.z) from world landmarks.
-        Correlates with pronation/supination: positive = one direction, negative = other."""
-        if self._world_smooth_z is None:
-            return None
-        return self._world_smooth_z["wrist"] - self._world_smooth_z["elbow"]
-
-    def get_rotation(self) -> float | None:
-        """Alias for get_rotation_z — kept for API compatibility."""
-        return self.get_rotation_z()
-
-    def get_forearm_asymmetry(self, frame) -> float | None:
-        """
-        Measures skin-pixel imbalance across the forearm axis.
-
-        Rotates the frame so the forearm is horizontal, cuts a ROI rectangle
-        between elbow and wrist, splits it into top/bottom halves, counts skin
-        pixels in each half via HSV masking, and returns:
-
-            asym = (top_skin - bot_skin) / (top_skin + bot_skin)   ∈ [-1, +1]
-
-        ~0 → symmetric (neutral rotation)
-        > 0 → more skin on the "top" side of the forearm axis
-        < 0 → more skin on the "bottom" side
-
-        Pass the ORIGINAL frame (before draw overlays) — overlays on the
-        elbow-wrist line would corrupt the pixel counts.
-        """
-        pts = self._landmarks
-        if not pts:
-            return None
-
-        ex, ey = pts["elbow"]["x"], pts["elbow"]["y"]
-        wx, wy = pts["wrist"]["x"], pts["wrist"]["y"]
-        dx, dy = wx - ex, wy - ey
-        length = math.sqrt(dx * dx + dy * dy)
-        if length < 30:
-            return None
-
-        cx, cy   = (ex + wx) / 2.0, (ey + wy) / 2.0
-        angle    = math.degrees(math.atan2(dy, dx))
-        half_w   = max(8, int(length * _ROI_HALF_W_RATIO))
-        half_l   = max(8, int(length * (0.5 - _ROI_MARGIN)))
-
-        h, w = frame.shape[:2]
-        M       = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
-        rotated = cv2.warpAffine(frame, M, (w, h), flags=cv2.INTER_LINEAR)
-
-        cxi, cyi = int(cx), int(cy)
-        x1    = max(0, cxi - half_l)
-        x2    = min(w,  cxi + half_l)
-        y_top = max(0, cyi - half_w)
-        y_mid = max(0, min(h, cyi))
-        y_bot = min(h,  cyi + half_w)
-
-        if x2 - x1 < 10 or y_bot - y_top < 6 or y_mid <= y_top or y_mid >= y_bot:
-            return None
-
-        def _skin_count(roi):
-            if roi.size == 0:
-                return 0
-            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-            m = cv2.bitwise_or(
-                cv2.inRange(hsv, _SKIN_LOWER1, _SKIN_UPPER1),
-                cv2.inRange(hsv, _SKIN_LOWER2, _SKIN_UPPER2),
-            )
-            return int(cv2.countNonZero(m))
-
-        top_n = _skin_count(rotated[y_top:y_mid, x1:x2])
-        bot_n = _skin_count(rotated[y_mid:y_bot, x1:x2])
-        total = top_n + bot_n
-
-        if total < _MIN_SKIN_PIXELS:
-            return None
-
-        return (top_n - bot_n) / total
-
-    def draw_forearm_roi(self, frame, asym: float | None = None):
-        """Draw the forearm ROI rectangle on `frame` for visual debugging."""
-        pts = self._landmarks
-        if not pts:
-            return
-
-        ex, ey = pts["elbow"]["x"], pts["elbow"]["y"]
-        wx, wy = pts["wrist"]["x"], pts["wrist"]["y"]
-        dx, dy = wx - ex, wy - ey
-        length = math.sqrt(dx * dx + dy * dy)
-        if length < 1:
-            return
-
-        ux, uy = dx / length, dy / length   # unit along forearm
-        px, py = -uy, ux                     # perpendicular (90° CCW)
-
-        half_w     = max(8, int(length * _ROI_HALF_W_RATIO))
-        margin_d   = length * _ROI_MARGIN
-        e2x, e2y   = ex + ux * margin_d, ey + uy * margin_d
-        w2x, w2y   = wx - ux * margin_d, wy - uy * margin_d
-
-        corners = np.array([
-            [int(e2x + px * half_w), int(e2y + py * half_w)],
-            [int(w2x + px * half_w), int(w2y + py * half_w)],
-            [int(w2x - px * half_w), int(w2y - py * half_w)],
-            [int(e2x - px * half_w), int(e2y - py * half_w)],
-        ], dtype=np.int32)
-
-        if asym is None or abs(asym) < 0.05:
-            color = (120, 120, 120)
-        elif asym > 0:
-            color = (0, 200, 255)    # cyan  — top dominant
-        else:
-            color = (255, 140, 0)    # orange — bottom dominant
-
-        cv2.polylines(frame, [corners], isClosed=True, color=color, thickness=1)
-        cv2.line(frame, (int(e2x), int(e2y)), (int(w2x), int(w2y)), (180, 180, 180), 1)
 
     def calibrate(self) -> bool:
         """
