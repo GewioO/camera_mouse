@@ -132,6 +132,7 @@ def main():
         nonlocal camera_running
         camera_running = False
         camera_stop_flag.set()
+        cv2.destroyAllWindows()
         ui.send_to_ui({"event": "camera_status", "data": {"running": False}})
 
     try:
@@ -146,19 +147,16 @@ def main():
                         start_camera()
                     else:
                         stop_camera()
-                        cv2.destroyAllWindows()
 
                 elif event == "profile_changed":
                     print(f"Profile changed to: {signal['data']['mode']}")
                     if camera_running:
                         stop_camera()
-                        cv2.destroyAllWindows()
 
                 elif event == "module_changed":
                     print(f"Module changed to: {signal['data']['module']}")
                     if camera_running:
                         stop_camera()
-                        cv2.destroyAllWindows()
 
                 elif event == "quit":
                     break

@@ -10,6 +10,6 @@
     "gesture_sensitivity": 40,
     "camera_id": 3,
     "camera_rotation": 0,
-    "active_module": "forearm",
+    "active_module": "hand",
     "forearm_side": "right"
 }

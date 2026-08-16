@@ -8,6 +8,7 @@ import sv_ttk
 
 from core.json_manager import JsonManager
 from core.module_manager import ModuleManager
+from core.profile_service import ProfileService
 from cli_manager import CLIManager
 from core.scale_controller import ScaleController
 from core.camera_manager import enumerate_cameras, get_camera_name
@@ -30,6 +31,7 @@ class UIManager:
         self.json_manager = json_manager
         self.cli_manager = CLIManager(json_manager)
         self.module_manager = ModuleManager(json_manager)
+        self.profile_service = ProfileService(json_manager)
         self._scale_ctrl = scale_controller
         self.texts = json_manager.load_texts()
         self.gestures_data = json_manager.load_gestures()
@@ -53,7 +55,7 @@ class UIManager:
             f"{get_camera_name(i)} ({i})" for i in self.available_cameras
         ]
 
-        # (protected profiles are determined per module — see _get_protected_profiles)
+        # (protected-profile rules + profile deletion live in ProfileService)
 
         # Widget references
         self.camera_label = None
@@ -219,13 +221,6 @@ class UIManager:
         # Right: language selector
         create_lang_selector(right, self.lang, self._on_lang_change)
 
-    def _get_protected_profiles(self) -> set:
-        module = self.module_manager.get()
-        if module == "forearm":
-            return {"default"}
-        # hand (and future modules): protect built-in profiles
-        return {"default", "scroll"}
-
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _rebuild_ui(self):
@@ -300,7 +295,7 @@ class UIManager:
     def _update_delete_btn(self):
         if self.delete_profile_btn is None:
             return
-        protected = self.cli_manager.mode in self._get_protected_profiles()
+        protected = self.profile_service.is_protected(self.module_manager.get(), self.cli_manager.mode)
         if protected:
             self.delete_profile_btn.pack_forget()
         else:
@@ -326,18 +321,14 @@ class UIManager:
         self.ui_to_main.put({"event": "module_changed", "data": {"module": module}})
 
     def _on_delete_profile(self):
+        module = self.module_manager.get()
         mode = self.cli_manager.mode
-        if mode in self._get_protected_profiles():
+        if self.profile_service.is_protected(module, mode):
             return
 
-        module = self.module_manager.get()
-        profiles = self.json_manager.load_profiles(module)
-        deleted_gesture_names = set(profiles[mode].values())
-        profiles.pop(mode, None)
-        self.json_manager.save_profiles(module, profiles)
-        self._cleanup_orphaned_gestures(deleted_gesture_names, profiles)
-
+        profiles = self.profile_service.delete_profile(module, mode)
         self.cli_manager.profiles = profiles
+        self.gestures_data = self.json_manager.load_gestures()  # orphans may have been pruned
 
         # Switch to first available profile
         new_mode = next(iter(profiles), "default")
@@ -349,19 +340,6 @@ class UIManager:
             self.profile_combo["values"] = new_names
 
         self._on_profile_change(new_mode)
-
-    def _cleanup_orphaned_gestures(self, deleted_names: set, remaining_profiles: dict) -> None:
-        in_use = {g for p in remaining_profiles.values() for g in p.values()}
-        orphaned = deleted_names - in_use
-        if not orphaned:
-            return
-        custom_checks = {"landmark_distance", "group_landmark_distance"}
-        gestures = self.json_manager.load_gestures()
-        kept = [g for g in gestures
-                if g["name"] not in orphaned or g.get("check") not in custom_checks]
-        if len(kept) != len(gestures):
-            self.json_manager.save_json("gestures.json", kept)
-            self.gestures_data = kept
 
     def _open_profile_builder(self):
         controller = ProfileBuilderController(self.json_manager, self.lang, module=self.module_manager.get())
