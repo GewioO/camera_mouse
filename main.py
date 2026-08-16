@@ -7,72 +7,13 @@ from core.json_manager import JsonManager
 from core.module_manager import ModuleManager
 from cli_manager import CLIManager
 from ui.ui_manager import UIManager
-from modules.hand.hand_tracker import HandTracker
-from modules.forearm.tracker import ForearmTracker
-from core.mouse_controller import MouseController
-from modules.hand.preset_gestures import PresetGestures
 from core.scale_controller import ScaleController
-from core.camera_manager import open_camera, enumerate_cameras, zoom_frame, rotate_frame
-from core.constants import (
-    FRAME_WIDTH, FRAME_HEIGHT,
-    DEFAULT_SCALE, DEFAULT_CAMERA_ID,
-    MOUSE_SMOOTHING,
-    SCROLL_DECAY, SCROLL_AMOUNT, SCROLL_VELOCITY_STEP,
-    COOLDOWN_FRAMES,
-    QUEUE_MAXSIZE,
-)
-
-class VideoThread:
-    def __init__(self, scale_controller, camera_id: int = DEFAULT_CAMERA_ID, rotation: int = 0):
-        self.cap = open_camera(camera_id)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.scale_controller = scale_controller
-        self.rotation = rotation
-        self.running = True
-
-    def run(self, frame_queue):
-        while self.running:
-            ret, frame = self.cap.read()
-            if not ret:
-                time.sleep(0.01)
-                continue
-
-            frame = rotate_frame(frame, self.rotation)
-            frame = cv2.flip(frame, 1)
-
-            current_scale = self.scale_controller.get()
-            frame_zoomed = zoom_frame(frame, current_scale)
-
-            try:
-                frame_queue.put_nowait(frame_zoomed)
-            except queue.Full:
-                pass
-
-            time.sleep(0.001)
-
-    def stop(self):
-        self.running = False
-        self.cap.release()
-
-class DisplayOverlay:
-    def __init__(self, scale_controller):
-        self.scale_controller = scale_controller
-        self.ui_commands = []
-
-    def add_ui_command(self, text, position, color, duration=20):
-        self.ui_commands.append({"text": text, "pos": position, "color": color, "frames": duration})
-
-    def draw(self, frame):
-        current_scale = self.scale_controller.get()
-        cv2.putText(frame, f"ZOOM: {current_scale:.2f}x [+/-]", (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 255), 2)
-        for cmd in self.ui_commands[:]:
-            cv2.putText(frame, cmd["text"], cmd["pos"],
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.1, cmd["color"], 3)
-            cmd["frames"] -= 1
-            if cmd["frames"] <= 0:
-                self.ui_commands.remove(cmd)
+from core.camera_manager import enumerate_cameras
+from core.video_thread import VideoThread
+from core.frame_io import push_frame, show_frame
+from modules.hand.hand_runner import HandRunner
+from modules.forearm.forearm_runner import ForearmRunner
+from core.constants import DEFAULT_SCALE, DEFAULT_CAMERA_ID, QUEUE_MAXSIZE
 
 def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_controller=None,
                display_queue=None, active_module="hand", forearm_side="right"):
@@ -92,22 +33,14 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
     video_t = threading.Thread(target=video_thread.run, args=(raw_frame_queue,), daemon=True)
     video_t.start()
 
-    display_overlay = DisplayOverlay(scale_controller)
-
     if on_ready_callback:
         on_ready_callback()
 
     print("=== Module:", active_module, "| Mode:", cli.mode, "===")
 
+    runner = _build_runner(active_module, cli, json_manager, scale_controller, forearm_side)
     try:
-        if active_module == "forearm":
-            tracker = ForearmTracker(side=forearm_side)
-            _run_forearm_loop(tracker, raw_frame_queue, scale_controller,
-                            display_queue, stop_flag)
-        else:
-            tracker = HandTracker(max_hands=1)
-            _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
-                           display_overlay, display_queue, stop_flag)
+        _run_loop(runner, raw_frame_queue, scale_controller, display_queue, stop_flag)
     finally:
         cli.main_config["scale"] = scale_controller.get()
         cli.persist_state()
@@ -117,95 +50,18 @@ def run_camera(cli, json_manager, stop_flag=None, on_ready_callback=None, scale_
         time.sleep(0.5)
         print("Camera stopped")
 
-
-def _run_hand_loop(tracker, raw_frame_queue, cli, json_manager, scale_controller,
-                   display_overlay, display_queue, stop_flag):
-    mouse = MouseController(FRAME_WIDTH, FRAME_HEIGHT, smoothing=MOUSE_SMOOTHING)
-    scroll_velocity = 0
-    profile = cli.current_profile
-
-    ONE_SHOT_ACTIONS = {"click", "double_click", "drag"}
-    CONTINUOUS_ACTIONS = {"scroll_down", "scroll_up"}
-    drag_active = False
-    gesture_was_active = {}
-    action_cooldown = {}
-
-    try:
-        while not (stop_flag and stop_flag.is_set()):
-            try:
-                frame_zoomed = raw_frame_queue.get_nowait()
-            except queue.Empty:
-                time.sleep(0.001)
-                continue
-
-            frame_with_hands = tracker.find_hands(frame_zoomed, draw=True)
-            landmarks = tracker.get_hand_landmarks()
-
-            if landmarks:
-                gestures = PresetGestures(landmarks, frame_zoomed.shape[1], frame_zoomed.shape[0], json_manager)
-                center_pos = tracker.get_hand_center(frame_zoomed.shape[1], frame_zoomed.shape[0])
-
-                if center_pos and "mouse_move" in profile:
-                    mouse.smooth_move(center_pos[0], center_pos[1])
-                    cv2.circle(frame_with_hands, center_pos, 12, (0, 255, 255), cv2.FILLED)
-
-                for action, gesture_name in profile.items():
-                    if action == "mouse_move":
-                        continue
-
-                    if action in ONE_SHOT_ACTIONS and action in action_cooldown and action_cooldown[action] > 0:
-                        action_cooldown[action] -= 1
-                        continue
-
-                    gesture_now = gestures.detect(gesture_name)
-                    gesture_prev = gesture_was_active.get(action, False)
-                    edge_triggered = gesture_now and not gesture_prev
-                    gesture_was_active[action] = gesture_now
-
-                    if action in ONE_SHOT_ACTIONS and edge_triggered:
-                        action_cooldown[action] = COOLDOWN_FRAMES
-                        if action == "click":
-                            mouse.click('left')
-                            display_overlay.add_ui_command("CLICK!", (50, 50), (0, 0, 255))
-                        elif action == "double_click":
-                            mouse.double_click()
-                            display_overlay.add_ui_command("DCLICK!", (50, 80), (255, 0, 255))
-                        elif action == "drag":
-                            mouse.toggle_drag(start=True)
-                            drag_active = True
-                            display_overlay.add_ui_command("DRAG ON", (50, 110), (0, 255, 255))
-
-                    elif action == "drag" and not gesture_now and drag_active:
-                        mouse.toggle_drag(start=False)
-                        drag_active = False
-                        display_overlay.add_ui_command("DRAG OFF", (50, 110), (0, 165, 255))
-
-                    elif action in CONTINUOUS_ACTIONS and gesture_now:
-                        if action == "scroll_down":
-                            scroll_velocity += SCROLL_VELOCITY_STEP
-                            display_overlay.add_ui_command("SCROLL DWON", (50, 200), (0, 255, 0), duration=5)
-                        elif action == "scroll_up":
-                            scroll_velocity -= SCROLL_VELOCITY_STEP
-                            display_overlay.add_ui_command("SCROLL UP", (50, 230), (255, 255, 0), duration=5)
-
-            if abs(scroll_velocity) >= 1:
-                mouse.scroll('down' if scroll_velocity > 0 else 'up', amount=SCROLL_AMOUNT)
-                scroll_velocity *= SCROLL_DECAY
-
-            display_overlay.draw(frame_with_hands)
-            _push_frame(frame_with_hands, display_queue, scale_controller)
-            time.sleep(0.001)
-
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if drag_active:
-            mouse.toggle_drag(start=False)
-        tracker.close()
+_RUNNERS = {
+    "hand":    lambda cli, jm, sc, side: HandRunner(cli, jm, sc),
+    "forearm": lambda cli, jm, sc, side: ForearmRunner(side=side),
+}
 
 
-def _run_forearm_loop(tracker, raw_frame_queue, scale_controller,
-                    display_queue, stop_flag):
+def _build_runner(active_module, cli, json_manager, scale_controller, forearm_side):
+    make = _RUNNERS.get(active_module, _RUNNERS["hand"])
+    return make(cli, json_manager, scale_controller, forearm_side)
+
+
+def _run_loop(runner, raw_frame_queue, scale_controller, display_queue, stop_flag):
     try:
         while not (stop_flag and stop_flag.is_set()):
             try:
@@ -214,40 +70,15 @@ def _run_forearm_loop(tracker, raw_frame_queue, scale_controller,
                 time.sleep(0.001)
                 continue
 
-            frame = tracker.find_pose(frame, draw=True)
-            landmarks = tracker.get_landmarks()
-
-            if landmarks:
-                angle = tracker.get_forearm_angle()
-                if angle is not None:
-                    cv2.putText(frame, f"angle: {angle:+.1f}", (10, 40),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 100), 2)
-            else:
-                cv2.putText(frame, "NO TRACKING", (10, 60),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-
-            _push_frame(frame, display_queue, scale_controller)
+            frame = runner.process(frame)
+            push_frame(frame, display_queue, scale_controller)
             time.sleep(0.001)
 
     except KeyboardInterrupt:
         pass
     finally:
-        tracker.close()
+        runner.close()
 
-
-def _push_frame(frame, display_queue, scale_controller):
-    if display_queue is not None:
-        try:
-            display_queue.put_nowait(frame)
-        except queue.Full:
-            pass
-    else:
-        cv2.imshow("AI Hand Mouse", frame)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('+') or key == ord('='):
-            scale_controller.increment(0.1)
-        elif key == ord('-'):
-            scale_controller.increment(-0.1)
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
@@ -332,16 +163,10 @@ def main():
                 elif event == "quit":
                     break
 
-            # Display frame from camera thread in main thread
             if camera_running:
                 try:
                     frame = display_queue.get_nowait()
-                    cv2.imshow("AI Hand Mouse", frame)
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == ord('+') or key == ord('='):
-                        scale_controller.increment(0.1)
-                    elif key == ord('-'):
-                        scale_controller.increment(-0.1)
+                    show_frame(frame, scale_controller)
                 except queue.Empty:
                     pass
 
