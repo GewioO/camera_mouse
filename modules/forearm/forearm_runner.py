@@ -2,25 +2,27 @@ import cv2
 
 from modules.base import ModuleRunner
 from modules.forearm.tracker import ForearmTracker
+from modules.forearm.forearm_controller import ForearmController
 
 
 class ForearmRunner(ModuleRunner):
     """
-    Minimal live loop: track the forearm (elbow->wrist anchor), draw it, and
-    show the 2D forearm angle as a HUD readout.
+    Forearm module glue: pose tracking + rendering
     """
 
     def __init__(self, side="right"):
         self.tracker = ForearmTracker(side=side)
+        self.controller = ForearmController()
 
     def process(self, frame):
         frame = self.tracker.find_pose(frame, draw=True)
         landmarks = self.tracker.get_landmarks()
+        angle = self.tracker.get_forearm_angle() if landmarks else None
+        result = self.controller.update(landmarks, angle)
 
-        if landmarks:
-            angle = self.tracker.get_forearm_angle()
-            if angle is not None:
-                cv2.putText(frame, f"angle: {angle:+.1f}", (10, 40),
+        if result.tracking:
+            if result.angle is not None:
+                cv2.putText(frame, f"angle: {result.angle:+.1f}", (10, 40),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 100), 2)
         else:
             cv2.putText(frame, "NO TRACKING", (10, 60),
@@ -28,4 +30,5 @@ class ForearmRunner(ModuleRunner):
         return frame
 
     def close(self):
+        self.controller.close()
         self.tracker.close()
